@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use anyhow::Result;
 
 /// The main entry point of `autogpt`.
@@ -23,29 +30,43 @@ async fn main() -> Result<()> {
     #[cfg(feature = "cli")]
     {
         use anyhow::anyhow;
+        #[cfg(feature = "gpt")]
         use autogpt::agents::architect::ArchitectGPT;
+        #[cfg(feature = "gpt")]
         use autogpt::agents::backend::BackendGPT;
+        #[cfg(feature = "gpt")]
         use autogpt::agents::designer::DesignerGPT;
+        #[cfg(feature = "gpt")]
         use autogpt::agents::frontend::FrontendGPT;
+        #[cfg(all(feature = "gpt", feature = "git"))]
         use autogpt::agents::git::GitGPT;
+        #[cfg(all(feature = "gpt", feature = "mail"))]
         use autogpt::agents::mailer::MailerGPT;
+        #[cfg(feature = "gpt")]
         use autogpt::agents::manager::ManagerGPT;
+        #[cfg(feature = "gpt")]
         use autogpt::agents::optimizer::OptimizerGPT;
         use autogpt::cli::autogpt::commands::{build, new, run, test};
         use autogpt::cli::autogpt::{Cli, Commands};
+        #[cfg(feature = "gpt")]
         use autogpt::common::input::read_user_input;
+        #[cfg(feature = "gpt")]
         use autogpt::common::utils::Scope;
+        #[cfg(feature = "gpt")]
         use autogpt::common::utils::Task;
+        #[cfg(feature = "gpt")]
         use autogpt::common::utils::ask_to_run_command;
         use autogpt::common::utils::fetch_latest_version;
         use autogpt::common::utils::is_outdated;
-        use autogpt::common::utils::prompt_for_update;
         use autogpt::common::utils::setup_logging;
         use autogpt::prelude::CTrait;
         use autogpt::prelude::ClientType;
+        #[cfg(feature = "gpt")]
         use autogpt::traits::functions::AsyncFunctions;
+        #[cfg(feature = "gpt")]
         use autogpt::traits::functions::Functions;
         use clap::Parser;
+        #[cfg(feature = "gpt")]
         use colored::*;
         use futures_util::StreamExt;
         use gems::messages::Content;
@@ -53,20 +74,30 @@ async fn main() -> Result<()> {
         use gems::models::Model;
         use gems::stream::StreamBuilder;
         use gems::utils::extract_text_from_partial_json;
+        #[cfg(feature = "net")]
         use iac_rs::message::Message;
+        #[cfg(feature = "net")]
         use iac_rs::prelude::*;
         use std::env;
+        #[cfg(feature = "gpt")]
         use std::env::var;
         use std::io::Write;
+        #[cfg(feature = "net")]
         use std::sync::Arc;
         use std::thread;
         use termimad::MadSkin;
+        #[cfg(feature = "net")]
         use tokio::io::AsyncBufReadExt;
+        #[cfg(feature = "net")]
         use tokio::signal;
+        #[cfg(feature = "net")]
         use tokio::sync::Mutex;
         use tokio::time::Duration;
+        #[cfg(feature = "net")]
         use tokio::time::timeout;
-        use tracing::{error, info, warn};
+        use tracing::error;
+        #[cfg(any(feature = "gpt", feature = "net"))]
+        use tracing::{info, warn};
 
         setup_logging()?;
 
@@ -74,9 +105,11 @@ async fn main() -> Result<()> {
 
         let current_version = env!("CARGO_PKG_VERSION");
 
+        #[allow(clippy::collapsible_if)]
         if let Some(latest_version) = fetch_latest_version().await {
             if is_outdated(current_version, &latest_version) {
-                prompt_for_update();
+                use autogpt::cli::tui::render_update_banner;
+                render_update_banner(current_version, &latest_version);
             }
         }
 
@@ -86,19 +119,17 @@ async fn main() -> Result<()> {
             thread::sleep(Duration::from_millis(delay));
         }
 
+        #[cfg(feature = "net")]
         async fn run_client() -> Result<()> {
             let signer = Signer::new(KeyPair::generate());
-
             let address =
                 env::var("ORCHESTRATOR_ADDRESS").unwrap_or_else(|_| "127.0.0.1:8443".to_string());
-
-            let client = Arc::new(Mutex::new(Client::connect(&address, signer.clone()).await?));
-
+            let client = Arc::new(Mutex::<Client>::new(
+                Client::connect(&address, signer.clone()).await?,
+            ));
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut input_line = String::new();
-
             let public_key_bytes = signer.verifying_key().as_slice().to_vec();
-
             let register_key_msg = Message {
                 from: "autogpt".into(),
                 to: "orchestrator".into(),
@@ -106,23 +137,18 @@ async fn main() -> Result<()> {
                 extra_data: public_key_bytes,
                 ..Default::default()
             };
-
             client.lock().await.send(register_key_msg).await?;
-
             let shutdown_signal = signal::ctrl_c();
             tokio::pin!(shutdown_signal);
-
             loop {
                 print!("> ");
                 std::io::stdout().flush()?;
                 input_line.clear();
-
                 tokio::select! {
                     read = stdin.read_line(&mut input_line) => {
                         if read? == 0 {
                             break;
                         }
-
                         let input = input_line.trim();
                         if input.is_empty() {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty command?".bright_yellow().bold());
@@ -202,7 +228,7 @@ async fn main() -> Result<()> {
                 #[cfg(feature = "gem")]
                 ClientType::Gemini(gem_client) => {
                     let parameters = StreamBuilder::default()
-                        .model(Model::Flash20)
+                        .model(Model::Flash3Preview)
                         .input(GemMessage::User {
                             content: Content::Text(prompt),
                             name: None,
@@ -258,40 +284,91 @@ async fn main() -> Result<()> {
                     todo!("Implement me plz.");
                 }
 
+                #[cfg(feature = "co")]
+                ClientType::Cohere(co_client) => {
+                    use cohere_rust::api::GenerateModel;
+                    use cohere_rust::api::chat::ChatRequest;
+
+                    let chat_request = ChatRequest {
+                        message: &prompt,
+                        model: Some(GenerateModel::Custom("command-a-03-2025".to_string())),
+                        max_tokens: Some(4096),
+                        ..Default::default()
+                    };
+
+                    match co_client.chat(&chat_request).await {
+                        Ok(mut receiver) => {
+                            while let Some(res) = receiver.recv().await {
+                                if let Ok(cohere_rust::api::chat::ChatStreamResponse::ChatTextGeneration { text, .. }) = res {
+                                    let lines: Vec<&str> = text.split('\n').collect();
+                                    for (i, line) in lines.iter().enumerate() {
+                                        if !line.is_empty() {
+                                            type_with_cursor_effect(line, 1, &skin);
+                                        }
+                                        if i < lines.len() - 1 {
+                                            println!();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Cohere chat streaming failed: {}", e);
+                        }
+                    }
+                }
+
                 #[allow(unreachable_patterns)]
                 _ => {
                     return Err(anyhow!(
-                        "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                        "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                     ));
                 }
             }
             println!();
-        } else if args.command.is_none() {
-            // If no command specified, default to networking mode (connects to an orchestrator).
-            info!(
-                "{}",
-                "[*] \"AGI\": 🌟 Welcome! What would you like to work on today?".bright_green()
-            );
-            loop {
-                match run_client().await {
-                    Ok(_) => {
-                        break;
-                    }
-                    Err(e) => {
-                        error!("Client error: {}", e);
-                        info!("{}", "[*] \"AGI\": 🔁 Reconnecting in 3s...".bright_green());
-                        tokio::time::sleep(Duration::from_secs(3)).await;
+        } else if args.command.is_none() && args.net {
+            #[cfg(feature = "net")]
+            {
+                // --net flag: connect to orchgpt orchestrator.
+                info!(
+                    "{}",
+                    "[*] \"AGI\": 🌐 Networking mode - connecting to orchestrator..."
+                        .bright_green()
+                );
+                loop {
+                    match run_client().await {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(e) => {
+                            error!("Client error: {}", e);
+                            info!("{}", "[*] \"AGI\": 🔁 Reconnecting in 3s...".bright_green());
+                            tokio::time::sleep(Duration::from_secs(3)).await;
+                        }
                     }
                 }
             }
+            #[cfg(not(feature = "net"))]
+            {
+                anyhow::bail!(
+                    "Networking feature 'net' is not enabled. Recompile with --features net."
+                );
+            }
+        } else if args.command.is_none() {
+            use autogpt::agents::generic::run_generic_agent_loop;
+            run_generic_agent_loop(args.yolo, args.session.as_deref()).await?;
         } else if let Some(command) = args.command {
-            // If a command is provided, operate in networkless (standalone agents) mode.
-            let mut git_agent = GitGPT::default();
-            let mut _optimizer_gpt = OptimizerGPT::default();
+            #[cfg(feature = "gpt")]
+            let workspace = var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace/".to_string());
+            #[cfg(feature = "gpt")]
             let language = "python";
-            let workspace = var("AUTOGPT_WORKSPACE")
-                .unwrap_or("workspace/".to_string())
-                .to_owned();
+
+            #[cfg(feature = "gpt")]
+            let mut _git_agent = GitGPT::default();
+            #[cfg(feature = "gpt")]
+            let mut _optimizer_gpt = OptimizerGPT::default();
+
+            #[cfg(feature = "gpt")]
             if !matches!(
                 command,
                 Commands::Test
@@ -299,20 +376,19 @@ async fn main() -> Result<()> {
                     | Commands::Build { out: _ }
                     | Commands::New { name: _ }
             ) {
-                git_agent = GitGPT::new("Commit all changes", "GitGPT").await;
-
-                let objective =
+                _git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
+                let behavior =
                     "Expertise lies in modularizing monolithic source code into clean components";
-                let position = "OptimizerGPT";
-
-                _optimizer_gpt = OptimizerGPT::new(objective, position, language).await;
+                let persona = "OptimizerGPT";
+                _optimizer_gpt = OptimizerGPT::new(persona, behavior, language).await;
             }
             match command {
+                #[cfg(feature = "gpt")]
                 Commands::Man => {
-                    let objective = "Expertise at managing projects at scale";
-                    let position = "ManagerGPT";
+                    let behavior = "Expertise at managing projects at scale";
+                    let persona = "ManagerGPT";
                     #[allow(unused_assignments)]
-                    let mut manager = ManagerGPT::new(objective, position, "", language);
+                    let mut manager = ManagerGPT::new(persona, behavior, "", language);
 
                     info!(
                         "{}",
@@ -322,7 +398,7 @@ async fn main() -> Result<()> {
 
                     loop {
                         let input = read_user_input()?;
-                        manager = ManagerGPT::new(objective, position, &input, language);
+                        manager = ManagerGPT::new(persona, behavior, &input, language);
 
                         if !input.is_empty() {
                             info!(
@@ -341,13 +417,13 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Arch => {
-                    let objective = "Expertise at managing projects at scale";
-                    let position = "ArchitectGPT";
-
-                    let mut architect_agent = ArchitectGPT::new(objective, position).await;
-
-                    let workspace = workspace + "architect";
+                    let behavior = "Expertise at managing projects at scale";
+                    let persona = "ArchitectGPT";
+                    let mut git_agent = GitGPT::default();
+                    let mut architect_agent = ArchitectGPT::new(persona, behavior).await;
+                    let workspace = workspace.clone() + "architect";
                     info!(
                         "{}",
                         "[*] \"AGI\": 🌟 Welcome! What would you like to work on today?"
@@ -365,7 +441,7 @@ async fn main() -> Result<()> {
                                     .bright_yellow()
                                     .bold()
                             );
-                            let mut tasks = Task {
+                            let mut task = Task {
                                 description: input.into(),
                                 scope: Some(Scope {
                                     crud: true,
@@ -379,7 +455,7 @@ async fn main() -> Result<()> {
                             };
 
                             architect_agent
-                                .execute(&mut tasks, true, false, 3)
+                                .execute(&mut task, true, false, 3)
                                 .await
                                 .unwrap();
                             info!(
@@ -388,7 +464,7 @@ async fn main() -> Result<()> {
                                     .green()
                                     .bold()
                             );
-                            let _ = git_agent.execute(&mut tasks, true, false, 1).await;
+                            let _ = git_agent.execute(&mut task, true, false, 1).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
 
                             if let Err(e) = ask_to_run_command(
@@ -425,12 +501,13 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Front => {
-                    let objective = "Expertise lies in writing frontend code";
-                    let position = "FrontendGPT";
-
-                    let workspace = workspace + "frontend";
-                    let mut frontend_agent = FrontendGPT::new(objective, position, language).await;
+                    let behavior = "Expertise lies in writing frontend code";
+                    let persona = "FrontendGPT";
+                    let mut git_agent = GitGPT::default();
+                    let workspace = workspace.clone() + "frontend";
+                    let mut frontend_agent = FrontendGPT::new(persona, behavior, language).await;
 
                     info!(
                         "{}",
@@ -450,7 +527,7 @@ async fn main() -> Result<()> {
                                     .bold()
                             );
 
-                            let mut tasks = Task {
+                            let mut task = Task {
                                 description: input.into(),
                                 scope: Some(Scope {
                                     crud: true,
@@ -464,7 +541,7 @@ async fn main() -> Result<()> {
                             };
 
                             frontend_agent
-                                .execute(&mut tasks, true, false, 3)
+                                .execute(&mut task, true, false, 3)
                                 .await
                                 .unwrap();
                             info!(
@@ -473,7 +550,7 @@ async fn main() -> Result<()> {
                                     .green()
                                     .bold()
                             );
-                            let _ = git_agent.execute(&mut tasks, true, false, 1).await;
+                            let _ = git_agent.execute(&mut task, true, false, 1).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
 
                             if let Err(e) = ask_to_run_command(
@@ -509,14 +586,16 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Back => {
-                    let objective =
+                    let behavior =
                         "Expertise lies in writing backend code for web servers and databases";
-                    let position = "BackendGPT";
-                    let workspace = workspace + "backend";
-                    let mut backend_gpt = BackendGPT::new(objective, position, language).await;
+                    let persona = "BackendGPT";
+                    let mut git_agent = GitGPT::default();
+                    let workspace = workspace.clone() + "backend";
+                    let mut backend_gpt = BackendGPT::new(persona, behavior, language).await;
 
-                    let mut tasks = Task {
+                    let mut task = Task {
                         description: Default::default(),
                         scope: Some(Scope {
                             crud: true,
@@ -546,10 +625,10 @@ async fn main() -> Result<()> {
                                     .bright_yellow()
                                     .bold()
                             );
-                            tasks.description = input.into();
+                            task.description = input.into();
 
                             backend_gpt
-                                .execute(&mut tasks, true, false, 3)
+                                .execute(&mut task, true, false, 3)
                                 .await
                                 .unwrap();
                             info!(
@@ -558,7 +637,7 @@ async fn main() -> Result<()> {
                                     .green()
                                     .bold()
                             );
-                            let _ = git_agent.execute(&mut tasks, true, false, 1).await;
+                            let _ = git_agent.execute(&mut task, true, false, 1).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
 
                             if let Err(e) = ask_to_run_command(
@@ -594,12 +673,13 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Design => {
-                    let objective = "Crafts stunning web design layouts";
-                    let position = "Web Designer";
-                    let mut designer_agent = DesignerGPT::new(objective, position).await;
-
-                    let mut tasks = Task {
+                    let behavior = "Crafts stunning web design layouts";
+                    let persona = "Web Designer";
+                    let mut git_agent = GitGPT::default();
+                    let mut designer_agent = DesignerGPT::new(persona, behavior).await;
+                    let mut task = Task {
                         description: "".into(),
                         scope: None,
                         urls: None,
@@ -625,9 +705,9 @@ async fn main() -> Result<()> {
                                     .bright_yellow()
                                     .bold()
                             );
-                            tasks.description = input.into();
+                            task.description = input.into();
 
-                            designer_agent.execute(&mut tasks, true, false, 3).await?;
+                            designer_agent.execute(&mut task, true, false, 3).await?;
 
                             info!(
                                 "{}",
@@ -636,7 +716,7 @@ async fn main() -> Result<()> {
                                     .bold()
                             );
 
-                            git_agent.execute(&mut tasks, true, false, 1).await?;
+                            git_agent.execute(&mut task, true, false, 1).await?;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -645,12 +725,12 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Mail => {
-                    let objective = "Expertise at summarizing emails";
-                    let position = "Mailer";
-
-                    let mut mailer_agent = MailerGPT::new(objective, position).await;
-                    let mut tasks = Task {
+                    let behavior = "Expertise at summarizing emails";
+                    let persona = "Mailer";
+                    let mut mailer_agent = MailerGPT::new(persona, behavior).await;
+                    let mut task = Task {
                         description: "".into(),
                         scope: Some(Scope {
                             crud: true,
@@ -680,9 +760,9 @@ async fn main() -> Result<()> {
                                     .bright_yellow()
                                     .bold()
                             );
-                            tasks.description = input.into();
+                            task.description = input.into();
 
-                            let _ = mailer_agent.execute(&mut tasks, true, false, 3).await;
+                            let _ = mailer_agent.execute(&mut task, true, false, 3).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -691,12 +771,12 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Git => {
-                    let objective = "Commit all changes";
-                    let position = "GitGPT";
-
-                    let mut git_agent = GitGPT::new(objective, position).await;
-                    let mut tasks = Task {
+                    let behavior = "Expertise at managing git repositories";
+                    let persona = "GitGPT";
+                    let mut git_agent = GitGPT::new(persona, behavior).await;
+                    let mut task = Task {
                         description: "".into(),
                         scope: Some(Scope {
                             crud: true,
@@ -726,9 +806,9 @@ async fn main() -> Result<()> {
                                     .bright_yellow()
                                     .bold()
                             );
-                            tasks.description = input.into();
+                            task.description = input.into();
 
-                            let _result = git_agent.execute(&mut tasks, true, false, 1).await;
+                            let _result = git_agent.execute(&mut task, true, false, 1).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -737,16 +817,19 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                #[cfg(feature = "gpt")]
                 Commands::Opt => {
-                    let objective = "Optimize and modularize backend code";
-                    let position = "OptimizerGPT";
+                    let behavior = "Expertise at optimizing codebases";
+                    let persona = "OptimizerGPT";
+                    let mut optimizer_agent = OptimizerGPT::new(persona, behavior, language).await;
 
-                    let mut optimizer_agent =
-                        OptimizerGPT::new(objective, position, language).await;
-
-                    let mut tasks = Task {
+                    let mut task = Task {
                         description: "".into(),
-                        scope: None,
+                        scope: Some(Scope {
+                            crud: true,
+                            auth: false,
+                            external: true,
+                        }),
                         urls: None,
                         frontend_code: None,
                         backend_code: None,
@@ -770,9 +853,9 @@ async fn main() -> Result<()> {
                                     .bright_yellow()
                                     .bold()
                             );
-                            tasks.description = input.into();
+                            task.description = input.into();
 
-                            let _result = optimizer_agent.execute(&mut tasks, true, false, 1).await;
+                            let _result = optimizer_agent.execute(&mut task, true, false, 1).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -780,6 +863,19 @@ async fn main() -> Result<()> {
                                                     .bold());
                         }
                     }
+                }
+                #[cfg(not(feature = "gpt"))]
+                Commands::Man
+                | Commands::Arch
+                | Commands::Front
+                | Commands::Back
+                | Commands::Design
+                | Commands::Mail
+                | Commands::Git
+                | Commands::Opt => {
+                    anyhow::bail!(
+                        "Agentic commands require the 'gpt' feature. Recompile with --features gpt."
+                    );
                 }
                 Commands::New { name } => new::handle_new(&name)?,
                 Commands::Build { out } => build::handle_build(out)?,
@@ -790,3 +886,10 @@ async fn main() -> Result<()> {
     }
     Ok(())
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

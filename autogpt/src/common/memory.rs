@@ -1,5 +1,12 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::common::utils::ClientType;
-use crate::common::utils::Communication;
+use crate::common::utils::Message;
 use anyhow::Result;
 use pinecone_sdk::models::{Kind, Value, Vector};
 use pinecone_sdk::pinecone::PineconeClientConfig;
@@ -18,16 +25,16 @@ async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<
             use gems::traits::CTrait;
 
             let params = EmbeddingBuilder::default()
-                .model(Model::Embedding)
+                .model(Model::Embedding001)
                 .input(Message::User {
                     content: Content::Text(content.into()),
                     name: None,
                 })
                 .build()
                 .unwrap_or_default();
-            gem_client.set_model(Model::Embedding);
+            gem_client.set_model(Model::Embedding001);
             let response = gem_client.embeddings().create(params).await;
-            gem_client.set_model(Model::Flash20);
+            gem_client.set_model(Model::Flash3Preview);
             match response {
                 Ok(embed_response) => {
                     if let Some(embedding) = embed_response.embedding {
@@ -79,6 +86,32 @@ async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<
                 }
             }
         }
+        #[cfg(feature = "co")]
+        ClientType::Cohere(co_client) => {
+            use cohere_rust::api::embed::EmbedRequest;
+            use cohere_rust::api::{EmbedModel, Truncate};
+
+            let parameters = EmbedRequest {
+                model: Some(EmbedModel::EnglishV3),
+                texts: &[content.to_string()],
+                truncate: Truncate::None,
+            };
+
+            match co_client.embed(&parameters).await {
+                Ok(response) => {
+                    if let Some(embedding) = response.first() {
+                        embedding.clone()
+                    } else {
+                        error!("Cohere: No embedding returned.");
+                        vec![]
+                    }
+                }
+                Err(err) => {
+                    error!("Cohere: Failed to embed content: {:?}", err);
+                    vec![]
+                }
+            }
+        }
 
         // TODO: Add embeddings for claude and xai
         #[allow(unreachable_patterns)]
@@ -92,7 +125,7 @@ async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<
 pub async fn save_long_term_memory(
     client: &mut ClientType,
     agent_id: Cow<'static, str>,
-    communication: Communication,
+    message: Message,
 ) -> Result<()> {
     let config = PineconeClientConfig {
         api_key: Some(std::env::var("PINECONE_API_KEY").unwrap_or_default()),
@@ -120,17 +153,20 @@ pub async fn save_long_term_memory(
     };
 
     let namespace = format!("agent-{agent_id}");
-    let values_f32: Vec<f32> = embed_text(client, communication.content.clone())
+    let values_f32: Vec<f32> = embed_text(client, message.content.clone())
         .await
         .into_iter()
         .map(|v| v as f32)
         .collect();
+    let mut padded_values: Vec<f32> = values_f32;
+    if padded_values.len() > 1024 {
+        padded_values.truncate(1024);
+    } else {
+        padded_values.resize(1024, 0.0);
+    }
 
-    let padding: Vec<f32> = vec![0.0; 1024 - values_f32.len()];
-    let padded_values: Vec<f32> = values_f32.into_iter().chain(padding).collect();
-
-    let content = communication.content.clone();
-    let role = communication.role.clone();
+    let content = message.content.clone();
+    let role = message.role.clone();
 
     let vector = Vector {
         id: uuid::Uuid::new_v4().to_string(),
@@ -159,7 +195,7 @@ pub async fn save_long_term_memory(
     Ok(())
 }
 
-pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Communication>> {
+pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Message>> {
     let config = PineconeClientConfig {
         api_key: Some(std::env::var("PINECONE_API_KEY").unwrap()),
         ..Default::default()
@@ -195,7 +231,7 @@ pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Co
 
     let fetched_result = index.fetch(&ids, &namespace.into()).await;
 
-    let communications = if let Ok(fetched) = fetched_result {
+    let messages = if let Ok(fetched) = fetched_result {
         fetched
             .vectors
             .values()
@@ -220,19 +256,19 @@ pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Co
                     })
                     .unwrap_or(Cow::Borrowed(""));
 
-                Communication { role, content }
+                Message { role, content }
             })
             .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
 
-    Ok(communications)
+    Ok(messages)
 }
 
 pub async fn long_term_memory_context(agent_id: Cow<'static, str>) -> String {
     match load_long_term_memory(agent_id).await {
-        Ok(comms) => comms
+        Ok(messages) => messages
             .iter()
             .map(|c| format!("{}: {}", c.role, c.content))
             .collect::<Vec<_>>()
@@ -240,3 +276,10 @@ pub async fn long_term_memory_context(agent_id: Cow<'static, str>) -> String {
         Err(_) => String::from(""),
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

@@ -1,3 +1,11 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+#![allow(dead_code)]
 pub(crate) const MANAGER_PROMPT: &str = r#"
 Your task is to translate user requests into concise project steps given the project goal and the role of the agent (e.g. frontend, backend, etc).
 
@@ -91,3 +99,10 @@ Example 4:
   User Request: "Develop a real-time chat application using Axum framework"
   Output: Axum framework
 "#;
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

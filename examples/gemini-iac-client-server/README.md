@@ -21,7 +21,7 @@ This example demonstrates how to use the IAC Protocol in AutoGPT with Gemini. It
 1. Fork/Clone the GitHub repository.
 
    ```sh
-   git clone https://github.com/kevin-rs/autogpt
+   git clone https://github.com/wiseaidotdev/autogpt
    ```
 
 1. Navigate to the application directory.

@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # Agents module.
 //!
 //! This module contains sub-modules representing different built-in AutoGPT agents.
@@ -12,6 +19,8 @@ pub mod backend;
 pub mod designer;
 #[cfg(feature = "gpt")]
 pub mod frontend;
+#[cfg(feature = "cli")]
+pub mod generic;
 #[cfg(feature = "gpt")]
 #[cfg(feature = "git")]
 pub mod git;

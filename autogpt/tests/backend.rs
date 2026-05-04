@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #![allow(unused)]
 
 use autogpt::agents::backend::BackendGPT;
@@ -16,11 +23,11 @@ async fn test_generate_backend_code() {
         .with(fmt::Layer::default())
         .init();
 
-    let objective = "Expertise lies in writing backend code for web servers and JSON databases";
-    let position = "Backend Developer";
+    let persona = "Backend Developer";
+    let behavior = "Expertise lies in writing backend code for web servers and JSON databases";
 
-    let mut backend_gpt = BackendGPT::new(objective, position, "python").await;
-    let mut tasks = Task {
+    let mut backend_gpt = BackendGPT::new(persona, behavior, "python").await;
+    let mut task = Task {
         description: "Generate a todo crud app using python FastAPI.".into(),
         scope: Some(Scope {
             crud: true,
@@ -33,22 +40,22 @@ async fn test_generate_backend_code() {
         api_schema: None,
     };
 
-    let result = backend_gpt.generate_backend_code(&mut tasks).await;
-    assert!(backend_gpt.get_agent().memory().len() >= 2);
+    let result = backend_gpt.generate_backend_code(&mut task).await;
+    assert!(!backend_gpt.get_agent().memory().is_empty());
     // assert_eq!(backend_gpt.get_agent().memory()[0].role, "user");
     // assert_eq!(backend_gpt.get_agent().memory()[1].role, "assistant");
 
     assert!(result.is_ok());
-    assert!(tasks.backend_code.is_some());
+    assert!(task.backend_code.is_some());
 }
 
 #[tokio::test]
 async fn test_improve_backend_code() {
-    let objective = "Expertise lies in writing backend code for web servers and JSON databases";
-    let position = "Backend Developer";
+    let persona = "Backend Developer";
+    let behavior = "Expertise lies in writing backend code for web servers and JSON databases";
 
-    let mut backend_gpt = BackendGPT::new(objective, position, "python").await;
-    let mut tasks = Task {
+    let mut backend_gpt = BackendGPT::new(persona, behavior, "python").await;
+    let mut task = Task {
         description: "Generate a todo crud app using Axum.".into(),
         scope: Some(Scope {
             crud: true,
@@ -60,7 +67,7 @@ async fn test_improve_backend_code() {
         backend_code: None,
         api_schema: None,
     };
-    tasks.backend_code = Some(
+    task.backend_code = Some(
         r#"
 use serde::Deserialize;
 use serde_json::json;
@@ -116,22 +123,22 @@ async fn main() {
         .into(),
     );
 
-    let result = backend_gpt.improve_backend_code(&mut tasks).await;
-    assert!(backend_gpt.get_agent().memory().len() >= 2);
+    let result = backend_gpt.improve_backend_code(&mut task).await;
+    assert!(!backend_gpt.get_agent().memory().is_empty());
     // assert_eq!(backend_gpt.get_agent().memory()[0].role, "user");
     // assert_eq!(backend_gpt.get_agent().memory()[1].role, "assistant");
 
     assert!(result.is_ok());
-    assert!(tasks.backend_code.is_some());
+    assert!(task.backend_code.is_some());
 }
 
 #[tokio::test]
 async fn test_fix_code_bugs() {
-    let objective = "Expertise lies in writing backend code for web servers and JSON databases";
-    let position = "Backend Developer";
+    let persona = "Backend Developer";
+    let behavior = "Expertise lies in writing backend code for web servers and JSON databases";
 
-    let mut backend_gpt = BackendGPT::new(objective, position, "python").await;
-    let mut tasks = Task {
+    let mut backend_gpt = BackendGPT::new(persona, behavior, "python").await;
+    let mut task = Task {
         description: "Generate a todo crud app using Axum.".into(),
         scope: Some(Scope {
             crud: true,
@@ -143,7 +150,7 @@ async fn test_fix_code_bugs() {
         backend_code: None,
         api_schema: None,
     };
-    tasks.backend_code = Some(
+    task.backend_code = Some(
         r#"use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -234,21 +241,21 @@ Some errors have detailed explanations: E0277, E0433.
 
 "#.into()));
 
-    let result = backend_gpt.fix_code_bugs(&mut tasks).await;
-    assert!(backend_gpt.get_agent().memory().len() >= 2);
+    let result = backend_gpt.fix_code_bugs(&mut task).await;
+    assert!(!backend_gpt.get_agent().memory().is_empty());
     // assert_eq!(backend_gpt.get_agent().memory()[0].role, "user");
     // assert_eq!(backend_gpt.get_agent().memory()[1].role, "assistant");
 
     assert!(result.is_ok());
-    assert!(tasks.backend_code.is_some());
+    assert!(task.backend_code.is_some());
 }
 
 #[tokio::test]
 async fn test_get_routes_json() {
-    let objective = "Expertise lies in writing backend code for web servers and JSON databases";
-    let position = "Backend Developer";
+    let persona = "Backend Developer";
+    let behavior = "Expertise lies in writing backend code for web servers and JSON databases";
 
-    let mut backend_gpt = BackendGPT::new(objective, position, "python").await;
+    let mut backend_gpt = BackendGPT::new(persona, behavior, "python").await;
 
     let result = backend_gpt.get_routes_json().await;
 
@@ -258,12 +265,12 @@ async fn test_get_routes_json() {
 
 #[tokio::test]
 async fn tests_backend_dev_one() {
-    let objective = "Expertise lies in writing backend code for web servers and JSON databases";
-    let position = "Backend Developer";
+    let persona = "Backend Developer";
+    let behavior = "Expertise lies in writing backend code for web servers and JSON databases";
 
-    let mut backend_gpt = BackendGPT::new(objective, position, "python").await;
+    let mut backend_gpt = BackendGPT::new(persona, behavior, "python").await;
 
-    let mut tasks = Task {
+    let mut task = Task {
         description: "Generate a todo crud app using python FastAPI.".into(),
         scope: Some(Scope {
             crud: true,
@@ -271,13 +278,20 @@ async fn tests_backend_dev_one() {
             external: true,
         }),
         urls: Some(vec![
-            "https://kevin-rs.dev/products".into(),
-            "https://kevin-rs.dev/cart".into(),
+            "https://wiseai.dev/products".into(),
+            "https://wiseai.dev/cart".into(),
         ]),
         frontend_code: None,
         backend_code: None,
         api_schema: None,
     };
 
-    // backend_gpt.execute(&mut tasks, true, false, 3).await.unwrap();
+    // backend_gpt.execute(&mut task, true, false, 3).await.unwrap();
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

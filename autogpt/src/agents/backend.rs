@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `BackendGPT` agent.
 //!
 //! This module provides functionality for generating backend code for web servers
@@ -16,12 +23,12 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut backend_agent = BackendGPT::new(
-//!         "Generate backend code",
 //!         "Backend Developer",
+//!         "Generate backend code",
 //!         "rust",
 //!     ).await;
 //!
-//!     let mut tasks = Task {
+//!     let mut task = Task {
 //!         description: "Create REST API endpoints for user authentication".into(),
 //!         scope: None,
 //!         urls: None,
@@ -30,7 +37,7 @@
 //!         api_schema: None,
 //!     };
 //!
-//!     if let Err(err) = backend_agent.execute(&mut tasks, true, false, 3).await {
+//!     if let Err(err) = backend_agent.execute(&mut task, true, false, 3).await {
 //!         eprintln!("Error executing backend tasks: {:?}", err);
 //!     }
 //! }
@@ -45,9 +52,9 @@ use crate::collaboration::Collaborator;
 use crate::common::utils::spinner;
 #[allow(unused_imports)]
 use crate::common::utils::{
-    Capability, ClientType, Communication, ContextManager, GenerationOutput, Goal, Knowledge,
-    OutputKind, Persona, Planner, Reflection, Route, Scope, Status, Task, TaskScheduler, Tool,
-    extract_array, strip_code_blocks,
+    Capability, ClientType, ContextManager, GenerationOutput, Goal, Knowledge, Message, OutputKind,
+    Persona, Planner, Reflection, Route, Scope, Status, Task, TaskScheduler, Tool, extract_array,
+    strip_code_blocks,
 };
 use crate::prompts::backend::{
     API_ENDPOINTS_PROMPT, FIX_CODE_PROMPT, IMPROVED_WEBSERVER_CODE_PROMPT, WEBSERVER_CODE_PROMPT,
@@ -90,15 +97,17 @@ use anthropic_ai_sdk::types::message::{
 
 #[cfg(feature = "gem")]
 use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
-    messages::{Content, Message},
-    models::Model,
-    stream::StreamBuilder,
-    traits::CTrait,
+    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
+    stream::StreamBuilder, traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -132,7 +141,7 @@ impl BackendGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - Objective description for `BackendGPT`.
+    /// * `behavior` - behavior description for `BackendGPT`.
     /// * `position` - Position description for `BackendGPT`.
     /// * `language` - Programming language used for backend development.
     ///
@@ -144,12 +153,12 @@ impl BackendGPT {
     ///
     /// - Constructs the workspace directory path for `BackendGPT`.
     /// - Initializes backend projects based on the specified language.
-    /// - Initializes the GPT agent with the given objective and position.
+    /// - Initializes the GPT agent with the given persona and behavior.
     /// - Creates clients for interacting with Gemini or OpenAI API and making HTTP requests.
     #[allow(unused)]
     pub async fn new(
-        objective: &'static str,
-        position: &'static str,
+        persona: &'static str,
+        behavior: &'static str,
         language: &'static str,
     ) -> Self {
         let base_workspace = var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace".to_string());
@@ -166,7 +175,7 @@ impl BackendGPT {
 
         info!(
             "{}",
-            format!("[*] {position:?}: 🛠️  Getting ready!")
+            format!("[*] {persona:?}: 🛠️  Getting ready!")
                 .bright_white()
                 .bold()
         );
@@ -247,8 +256,8 @@ impl BackendGPT {
             _ => panic!("Unsupported language '{language}'. Consider opening an issue/PR.",),
         }
 
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
 
         let client = ClientType::from_env();
 
@@ -270,7 +279,7 @@ impl BackendGPT {
     pub async fn build_request(
         &mut self,
         prompt: &str,
-        tasks: &mut Task,
+        task: &mut Task,
         output_type: OutputKind,
     ) -> Result<GenerationOutput> {
         #[cfg(feature = "mem")]
@@ -281,11 +290,11 @@ impl BackendGPT {
         let request: String = format!(
             "{}\n\nTask Description: {}\nPrevious Conversation: {:?}",
             prompt,
-            tasks.description,
+            task.description,
             self.agent.memory(),
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(request.clone()),
         });
@@ -293,7 +302,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(request.clone()),
                 })
@@ -303,11 +312,17 @@ impl BackendGPT {
         #[allow(unused)]
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(&request).await?;
         }
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(response_text.clone()),
         });
@@ -315,21 +330,21 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(response_text.clone()),
                 })
                 .await;
         }
 
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         match output_type {
             OutputKind::Text => Ok(GenerationOutput::Text(strip_code_blocks(&response_text))),
             OutputKind::UrlList => {
                 let urls: Vec<Cow<'static, str>> =
                     serde_json::from_str(&extract_array(&response_text).unwrap_or_default())?;
-                tasks.urls = Some(urls.clone());
+                task.urls = Some(urls.clone());
                 self.agent.update(Status::InUnitTesting);
                 Ok(GenerationOutput::UrlList(urls))
             }
@@ -361,10 +376,10 @@ impl BackendGPT {
     /// - Reads the template code from the specified file.
     /// - Constructs a request using the template code and project description.
     /// - Sends the request to the Gemini or OpenAI API to generate backend code.
-    /// - Logs the user request and assistant response as communication history in the agent's memory.
+    /// - Logs the user request and assistant response as message history in the agent's memory.
     /// - Writes the generated backend code to the appropriate file based on language.
     /// - Updates the task's backend code and the agent's status to `Completed`.
-    pub async fn generate_backend_code(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn generate_backend_code(&mut self, task: &mut Task) -> Result<String> {
         let path = self.workspace.clone();
 
         let backend_path = match self.language {
@@ -378,10 +393,10 @@ impl BackendGPT {
 
         let prompt = format!(
             "{}\n\nCode Template: {}\nProject Description: {}",
-            WEBSERVER_CODE_PROMPT, template, tasks.description
+            WEBSERVER_CODE_PROMPT, template, task.description
         );
 
-        let output = self.build_request(&prompt, tasks, OutputKind::Text).await?;
+        let output = self.build_request(&prompt, task, OutputKind::Text).await?;
 
         let code = match output {
             GenerationOutput::Text(code) => code,
@@ -391,20 +406,20 @@ impl BackendGPT {
         };
 
         fs::write(&backend_path, &code).await?;
-        tasks.backend_code = Some(code.clone().into());
+        task.backend_code = Some(code.clone().into());
 
         self.agent.update(Status::Completed);
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(code)
     }
 
-    /// Asynchronously improves existing backend code based on tasks,
-    /// while logging communication between the agent and the AI.
+    /// Asynchronously improves existing backend code based on the task,
+    /// while logging messages between the agent and the AI.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks to be processed.
+    /// * `task` - A mutable reference to the task to be processed.
     ///
     /// # Returns
     ///
@@ -417,24 +432,24 @@ impl BackendGPT {
     /// # Business Logic
     ///
     /// - Constructs a request based on the existing backend code and project description.
-    /// - Logs the user's request as a `Communication`.
+    /// - Logs the user's request as a `Message`.
     /// - Sends the request to the Gemini or OpenAI API to generate improved code.
-    /// - Logs the AI's response as a `Communication`.
+    /// - Logs the AI's response as a `Message`.
     /// - Writes the improved backend code to the appropriate file.
     /// - Updates tasks and agent status accordingly.
-    pub async fn improve_backend_code(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn improve_backend_code(&mut self, task: &mut Task) -> Result<String> {
         #[cfg(feature = "mem")]
         {
             self.agent.memory = self.get_ltm().await?;
         }
 
-        let code_template = tasks.backend_code.clone().unwrap_or_default();
+        let code_template = task.backend_code.clone().unwrap_or_default();
         let request = format!(
             "{}\n\nCode Template: {}\nProject Description: {}",
-            IMPROVED_WEBSERVER_CODE_PROMPT, code_template, tasks.description
+            IMPROVED_WEBSERVER_CODE_PROMPT, code_template, task.description
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(request.clone()),
         });
@@ -442,7 +457,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(request.clone()),
                 })
@@ -452,12 +467,18 @@ impl BackendGPT {
         #[allow(unused)]
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(&request).await?;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(response_text.clone()),
         });
@@ -465,7 +486,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(response_text.clone()),
                 })
@@ -483,27 +504,27 @@ impl BackendGPT {
 
         debug!(
             "[*] {:?}: Writing to {}",
-            self.agent.position(),
+            self.agent.persona(),
             backend_path
         );
 
         fs::write(&backend_path, &cleaned_code).await?;
 
-        tasks.backend_code = Some(cleaned_code.clone().into());
+        task.backend_code = Some(cleaned_code.clone().into());
 
         self.agent.update(Status::Completed);
 
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(cleaned_code)
     }
 
-    /// Asynchronously fixes bugs in the backend code based on tasks,
-    /// while logging communication between the agent and the AI.
+    /// Asynchronously fixes bugs in the backend code based on the task,
+    /// while logging messages between the agent and the AI.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks to be processed.
+    /// * `task` - A mutable reference to the task to be processed.
     ///
     /// # Returns
     ///
@@ -516,23 +537,23 @@ impl BackendGPT {
     /// # Business Logic
     ///
     /// - Constructs a request based on the buggy backend code and project description.
-    /// - Logs the request as a user `Communication`.
+    /// - Logs the request as a user `Message`.
     /// - Sends the request to the Gemini or OpenAI API to generate content for fixing bugs.
-    /// - Logs the response or any errors as assistant `Communication`s.
+    /// - Logs the response or any errors as assistant `Message`s.
     /// - Writes the fixed backend code to the appropriate file.
     /// - Updates tasks and agent status accordingly.
-    pub async fn fix_code_bugs(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn fix_code_bugs(&mut self, task: &mut Task) -> Result<String> {
         #[cfg(feature = "mem")]
         {
             self.agent.memory = self.get_ltm().await?;
         }
 
-        let buggy_code = tasks.backend_code.clone().unwrap_or_default();
+        let buggy_code = task.backend_code.clone().unwrap_or_default();
         let bugs = self.bugs.clone().unwrap_or_default();
         let request =
             format!("{FIX_CODE_PROMPT}\n\nBuggy Code: {buggy_code}\nBugs: {bugs}\n\nFix all bugs.");
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(request.clone()),
         });
@@ -540,7 +561,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(request.clone()),
                 })
@@ -550,12 +571,18 @@ impl BackendGPT {
         #[allow(unused)]
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(&request).await?;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(response_text.clone()),
         });
@@ -563,7 +590,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(response_text.clone()),
                 })
@@ -582,22 +609,22 @@ impl BackendGPT {
 
         debug!(
             "[*] {:?}: Writing to {}",
-            self.agent.position(),
+            self.agent.persona(),
             backend_path
         );
 
         fs::write(&backend_path, &cleaned_code).await?;
 
-        tasks.backend_code = Some(cleaned_code.clone().into());
+        task.backend_code = Some(cleaned_code.clone().into());
 
         self.agent.update(Status::Completed);
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(cleaned_code)
     }
 
     /// Asynchronously retrieves routes JSON from the backend code,
-    /// while logging communication between the agent and the AI.
+    /// while logging messages between the agent and the AI.
     ///
     /// # Returns
     ///
@@ -611,9 +638,9 @@ impl BackendGPT {
     ///
     /// - Reads the backend code from the appropriate file.
     /// - Constructs a request with the backend code.
-    /// - Logs the user's request as a `Communication`.
+    /// - Logs the user's request as a `Message`.
     /// - Sends the request to the Gemini or OpenAI API to generate content for routes JSON.
-    /// - Logs the AI's response as a `Communication`.
+    /// - Logs the AI's response as a `Message`.
     /// - Updates agent status accordingly.
     pub async fn get_routes_json(&mut self) -> Result<String> {
         #[cfg(feature = "mem")]
@@ -629,18 +656,14 @@ impl BackendGPT {
             _ => return Err(anyhow!("Unsupported language")),
         };
 
-        debug!(
-            "[*] {:?}: Reading from {}",
-            self.agent.position(),
-            full_path
-        );
+        debug!("[*] {:?}: Reading from {}", self.agent.persona(), full_path);
 
         let backend_code = fs::read_to_string(full_path).await?;
         let request = format!(
             "{API_ENDPOINTS_PROMPT}\n\nHere is the backend code with all routes:{backend_code}"
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(request.clone()),
         });
@@ -648,7 +671,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(request.clone()),
                 })
@@ -657,12 +680,18 @@ impl BackendGPT {
         #[allow(unused)]
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(&request).await?;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(response_text.clone()),
         });
@@ -670,7 +699,7 @@ impl BackendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(response_text.clone()),
                 })
@@ -678,14 +707,14 @@ impl BackendGPT {
         }
 
         self.agent.update(Status::Completed);
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(strip_code_blocks(&response_text))
     }
 
     pub fn think(&self) -> String {
-        let objective = self.agent.objective();
-        format!("How to build and test backend for '{objective}'")
+        let behavior = self.agent.behavior();
+        format!("How to build and test backend for '{behavior}'")
     }
 
     pub fn plan(&mut self, _context: String) -> Goal {
@@ -731,7 +760,7 @@ impl BackendGPT {
     pub async fn act(
         &mut self,
         goal: Goal,
-        tasks: &mut Task,
+        task: &mut Task,
         execute: bool,
         max_tries: u64,
     ) -> Result<()> {
@@ -739,7 +768,7 @@ impl BackendGPT {
             "{}",
             format!(
                 "[*] {:?}: Executing goal: {}",
-                self.agent.position(),
+                self.agent.persona(),
                 goal.description
             )
             .cyan()
@@ -748,19 +777,19 @@ impl BackendGPT {
 
         match goal.description.as_str() {
             "Generate backend code" => {
-                self.generate_or_improve_code(tasks).await?;
+                self.generate_or_improve_code(task).await?;
                 self.agent.update(Status::Active);
             }
             "Fix code bugs if any" => {
                 if self.nb_bugs > 0 {
-                    self.fix_code_bugs(tasks).await?;
+                    self.fix_code_bugs(task).await?;
                 } else {
-                    self.improve_backend_code(tasks).await?;
+                    self.improve_backend_code(task).await?;
                 }
                 self.agent.update(Status::InUnitTesting);
             }
             "Run unit tests and backend server" => {
-                self.unit_test_and_run_backend(tasks, execute, max_tries)
+                self.unit_test_and_run_backend(task, execute, max_tries)
                     .await?;
                 self.agent.update(Status::Completed);
             }
@@ -769,7 +798,7 @@ impl BackendGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Unknown goal: {}",
-                        self.agent.position(),
+                        self.agent.persona(),
                         goal.description
                     )
                     .yellow()
@@ -781,23 +810,17 @@ impl BackendGPT {
     }
 
     pub fn reflect(&mut self) {
-        let entry = format!(
-            "Reflection on backend task for '{}'",
-            self.agent.objective()
-        );
+        let entry = format!("Reflection on backend task for '{}'", self.agent.behavior());
 
-        self.agent.memory_mut().push(Communication {
+        self.agent.memory_mut().push(Message {
             role: Cow::Borrowed("assistant"),
             content: entry.clone().into(),
         });
 
-        self.agent
-            .context_mut()
-            .recent_messages
-            .push(Communication {
-                role: Cow::Borrowed("assistant"),
-                content: entry.into(),
-            });
+        self.agent.context_mut().recent_messages.push(Message {
+            role: Cow::Borrowed("assistant"),
+            content: entry.into(),
+        });
 
         if let Some(reflection) = self.agent.reflection() {
             let feedback = (reflection.evaluation_fn)(&self.agent);
@@ -805,7 +828,7 @@ impl BackendGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Self Reflection: {}",
-                    self.agent.position(),
+                    self.agent.persona(),
                     feedback
                 )
                 .blue()
@@ -813,7 +836,7 @@ impl BackendGPT {
         }
     }
 
-    pub fn has_completed_objective(&self) -> bool {
+    pub fn has_completed_behavior(&self) -> bool {
         if let Some(planner) = self.planner() {
             planner.current_plan.iter().all(|g| g.completed)
         } else {
@@ -831,8 +854,8 @@ impl BackendGPT {
         }
     }
 
-    fn display_task_info(&self, tasks: &Task) {
-        for task in tasks.clone().description.clone().split("- ") {
+    fn display_task_info(&self, task: &Task) {
+        for task in task.clone().description.clone().split("- ") {
             if !task.trim().is_empty() {
                 info!("{} {}", "•".bright_white().bold(), task.trim().cyan());
             }
@@ -847,18 +870,18 @@ impl BackendGPT {
         );
     }
 
-    async fn generate_or_improve_code(&mut self, tasks: &mut Task) -> Result<()> {
+    async fn generate_or_improve_code(&mut self, task: &mut Task) -> Result<()> {
         if self.nb_bugs == 0 {
-            self.generate_backend_code(tasks).await?;
+            self.generate_backend_code(task).await?;
         } else {
-            self.improve_backend_code(tasks).await?;
+            self.improve_backend_code(task).await?;
         }
         Ok(())
     }
 
     async fn unit_test_and_run_backend(
         &mut self,
-        tasks: &mut Task,
+        task: &mut Task,
         execute: bool,
         max_tries: u64,
     ) -> Result<()> {
@@ -866,7 +889,7 @@ impl BackendGPT {
             "{}",
             format!(
                 "[*] {:?}: Backend Code Unit Testing...",
-                self.agent.position()
+                self.agent.persona()
             )
             .bright_white()
             .bold()
@@ -877,7 +900,7 @@ impl BackendGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Code not safe to proceed, skipping execution...",
-                    self.agent.position()
+                    self.agent.persona()
                 )
                 .bright_yellow()
                 .bold()
@@ -904,7 +927,7 @@ impl BackendGPT {
                         "{}",
                         format!(
                             "[*] {:?}: Too many bugs detected. Please debug manually.",
-                            self.agent.position()
+                            self.agent.persona()
                         )
                         .bright_red()
                         .bold()
@@ -920,7 +943,7 @@ impl BackendGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Backend server build successful...",
-                        self.agent.position()
+                        self.agent.persona()
                     )
                     .bright_white()
                     .bold()
@@ -938,13 +961,13 @@ impl BackendGPT {
                 .cloned()
                 .collect();
 
-            tasks.api_schema = Some(filtered_endpoints.clone());
+            task.api_schema = Some(filtered_endpoints.clone());
 
             info!(
                 "{}",
                 format!(
                     "[*] {:?}: Starting web server to test endpoints...",
-                    self.agent.position()
+                    self.agent.persona()
                 )
                 .bright_white()
                 .bold()
@@ -955,7 +978,7 @@ impl BackendGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Testing endpoint: {}",
-                        self.agent.position(),
+                        self.agent.persona(),
                         endpoint.path
                     )
                     .bright_white()
@@ -970,7 +993,7 @@ impl BackendGPT {
                         "{}",
                         format!(
                             "[*] {:?}: Endpoint failed: {}. Needs further investigation.",
-                            self.agent.position(),
+                            self.agent.persona(),
                             endpoint.path
                         )
                         .bright_white()
@@ -988,7 +1011,7 @@ impl BackendGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Backend testing complete. Results saved to api.json",
-                    self.agent.position()
+                    self.agent.persona()
                 )
                 .bright_white()
                 .bold()
@@ -998,7 +1021,7 @@ impl BackendGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Failed to build or run backend project.",
-                    self.agent.position()
+                    self.agent.persona()
                 )
                 .bright_red()
                 .bold()
@@ -1059,80 +1082,80 @@ impl BackendGPT {
                 .stderr(Stdio::null())
                 .status();
 
-            if let Ok(status) = create_venv.await {
-                if status.success() {
-                    let main_py_path = format!("{path}/main.py");
-                    let main_py_content = fs::read_to_string(&main_py_path)
-                        .await
-                        .expect("Failed to read main.py");
+            if let Ok(status) = create_venv.await
+                && status.success()
+            {
+                let main_py_path = format!("{path}/main.py");
+                let main_py_content = fs::read_to_string(&main_py_path)
+                    .await
+                    .expect("Failed to read main.py");
 
-                    let mut packages = vec![];
+                let mut packages = vec![];
 
-                    for line in main_py_content.lines() {
-                        if line.starts_with("from ") || line.starts_with("import ") {
-                            let parts: Vec<&str> = line.split_whitespace().collect();
+                for line in main_py_content.lines() {
+                    if line.starts_with("from ") || line.starts_with("import ") {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
 
-                            if let Some(pkg) = parts.get(1) {
-                                let root_pkg = pkg.split('.').next().unwrap_or(pkg);
-                                if !packages.contains(&root_pkg) {
-                                    packages.push(root_pkg);
-                                }
+                        if let Some(pkg) = parts.get(1) {
+                            let root_pkg = pkg.split('.').next().unwrap_or(pkg);
+                            if !packages.contains(&root_pkg) {
+                                packages.push(root_pkg);
                             }
                         }
                     }
-                    if !packages.is_empty() {
-                        if !packages.contains(&"uvicorn") {
-                            packages.push("uvicorn");
-                        }
-                        if !packages.contains(&"httpx") {
-                            packages.push("httpx");
-                        }
-                        for pkg in &packages {
-                            let install_status = Command::new(&pip_path)
-                                .arg("install")
-                                .arg(pkg)
-                                .stdout(Stdio::null())
-                                .stderr(Stdio::null())
-                                .status();
+                }
+                if !packages.is_empty() {
+                    if !packages.contains(&"uvicorn") {
+                        packages.push("uvicorn");
+                    }
+                    if !packages.contains(&"httpx") {
+                        packages.push("httpx");
+                    }
+                    for pkg in &packages {
+                        let install_status = Command::new(&pip_path)
+                            .arg("install")
+                            .arg(pkg)
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status();
 
-                            match install_status.await {
-                                Ok(status) if status.success() => {
-                                    info!(
-                                        "{}",
-                                        format!(
-                                            "[*] {:?}: Successfully installed Python package '{}'",
-                                            self.agent.position(),
-                                            pkg
-                                        )
-                                        .bright_white()
-                                        .bold()
-                                    );
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "{}",
-                                        format!(
-                                            "[*] {:?}: Failed to install Python package '{}': {}",
-                                            self.agent.position(),
-                                            pkg,
-                                            e
-                                        )
-                                        .bright_red()
-                                        .bold()
-                                    );
-                                }
-                                _ => {
-                                    error!(
+                        match install_status.await {
+                            Ok(status) if status.success() => {
+                                info!(
+                                    "{}",
+                                    format!(
+                                        "[*] {:?}: Successfully installed Python package '{}'",
+                                        self.agent.persona(),
+                                        pkg
+                                    )
+                                    .bright_white()
+                                    .bold()
+                                );
+                            }
+                            Err(e) => {
+                                error!(
+                                    "{}",
+                                    format!(
+                                        "[*] {:?}: Failed to install Python package '{}': {}",
+                                        self.agent.persona(),
+                                        pkg,
+                                        e
+                                    )
+                                    .bright_red()
+                                    .bold()
+                                );
+                            }
+                            _ => {
+                                error!(
                                         "{}",
                                         format!(
                                             "[*] {:?}: Installation of package '{}' exited with an error",
-                                            self.agent.position(),
+                                            self.agent.persona(),
                                             pkg
                                         )
                                         .bright_red()
                                         .bold()
                                     );
-                                }
                             }
                         }
                     }
@@ -1193,19 +1216,19 @@ impl BackendGPT {
 /// # Business Logic
 ///
 /// - Provides access to the agent associated with the `BackendGPT` instance.
-/// - Executes tasks asynchronously based on the current status of the agent.
+/// - Executes the task asynchronously based on the current status of the agent.
 /// - Handles task execution including code generation, bug fixing, and testing.
 /// - Manages retries and error handling during task execution.
 #[async_trait]
 impl Executor for BackendGPT {
-    /// Asynchronously executes tasks associated with BackendGPT.
+    /// Asynchronously executes the task associated with BackendGPT.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks to be executed.
-    /// * `execute` - A boolean indicating whether to execute the tasks.
+    /// * `task` - A mutable reference to the task to be executed.
+    /// * `execute` - A boolean indicating whether to execute the task.
     /// * `browse` - Whether to open the API docs in a browser.
-    /// * `max_tries` - Maximum number of attempts to execute tasks.
+    /// * `max_tries` - Maximum number of attempts to execute the task.
     ///
     /// # Returns
     ///
@@ -1217,13 +1240,13 @@ impl Executor for BackendGPT {
     ///
     /// # Business Logic
     ///
-    /// - Executes tasks asynchronously based on the current status of the agent.
+    /// - Executes the task asynchronously based on the current status of the agent.
     /// - Handles task execution including code generation, bug fixing, and testing.
     /// - Manages retries and error handling during task execution.
     ///
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
@@ -1231,12 +1254,12 @@ impl Executor for BackendGPT {
         self.agent.update(Status::Idle);
         info!(
             "{}",
-            format!("[*] {:?}: Executing task:", self.agent.position())
+            format!("[*] {:?}: Executing task:", self.agent.persona())
                 .bright_white()
                 .bold()
         );
 
-        self.display_task_info(tasks);
+        self.display_task_info(task);
 
         if browse {
             #[cfg(feature = "cli")]
@@ -1261,7 +1284,7 @@ impl Executor for BackendGPT {
 
             #[cfg(feature = "cli")]
             let pb = spinner("Acting on goal...");
-            self.act(goal.clone(), tasks, execute, max_tries).await?;
+            self.act(goal.clone(), task, execute, max_tries).await?;
             #[cfg(feature = "cli")]
             pb.finish_with_message("Action complete!");
 
@@ -1277,10 +1300,10 @@ impl Executor for BackendGPT {
             #[cfg(feature = "cli")]
             pb.finish_with_message("Reflection complete!");
 
-            if self.has_completed_objective() {
+            if self.has_completed_behavior() {
                 info!(
                     "{}",
-                    format!("[*] {:?}: Objective complete!", self.agent.position())
+                    format!("[*] {:?}: behavior complete!", self.agent.persona())
                         .green()
                         .bold()
                 );
@@ -1293,3 +1316,10 @@ impl Executor for BackendGPT {
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

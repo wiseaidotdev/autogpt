@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use anyhow::{Context, Result};
 use bytes::{Buf, BufMut};
 use prost::Message as ProstMessage;
@@ -329,3 +336,10 @@ fn gen_msg_id() -> u64 {
         .try_next_u64()
         .expect("Secure RNG failed to initialize")
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

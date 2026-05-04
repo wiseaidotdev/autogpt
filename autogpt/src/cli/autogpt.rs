@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #[cfg(feature = "cli")]
 pub mod ast;
 #[cfg(feature = "cli")]
@@ -76,10 +83,31 @@ pub struct Cli {
 
     /// Directly prompt the LLM without using an agentic workflow.
     ///
-    /// Use this option to send a single, raw prompt to the LLM for immediate response.
-    /// This bypasses any structured task handling or multi-step reasoning.
+    /// Sends a single, raw prompt to the LLM for immediate response, bypassing the
+    /// full agentic session lifecycle.
     #[arg(short, long)]
     pub prompt: Option<String>,
+
+    /// Connect to an `orchgpt` orchestrator over TLS (networking mode).
+    ///
+    /// When set, `autogpt` connects to the configured `ORCHESTRATOR_ADDRESS` instead
+    /// of launching the interactive generic agent.
+    #[arg(long, default_value_t = false)]
+    pub net: bool,
+
+    /// Auto-approve all plans and execute without user confirmation (YOLO mode).
+    ///
+    /// Suppresses the approval gate between plan generation and task execution.
+    /// Ideal for unattended pipelines and CI environments.
+    #[arg(short, long, default_value_t = false)]
+    pub yolo: bool,
+
+    /// Resume a specific previous session by its session ID.
+    ///
+    /// The session ID is the UUID shown in `/sessions`. When provided, AutoGPT
+    /// loads the session history and resumes from where it left off.
+    #[arg(short, long, value_name = "SESSION_ID")]
+    pub session: Option<String>,
 
     /// Subcommands for autogpt.
     #[clap(subcommand)]
@@ -182,3 +210,10 @@ pub enum Commands {
     )]
     Opt,
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

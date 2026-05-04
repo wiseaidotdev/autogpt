@@ -1,3 +1,11 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+#![allow(dead_code)]
 pub(crate) const FRONTEND_CODE_PROMPT: &str = r#"
 Your task is to generate frontend code for a web application using the selected framework.
 
@@ -46,3 +54,10 @@ Instructions:
 - Your task is to fix the bugs in the code.
 - You should only output the new and improved code, without any commentary.
 "#;
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

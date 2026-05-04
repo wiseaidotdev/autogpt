@@ -1,9 +1,16 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `AgentGPT` agent.
 //!
 
 use crate::common::utils::{
-    Capability, Communication, ContextManager, Knowledge, Persona, Planner, Reflection, Status,
-    Task, TaskScheduler, Tool, default_eval_fn,
+    Capability, ContextManager, Knowledge, Message, Persona, Planner, Reflection, Status, Task,
+    TaskScheduler, Tool, default_eval_fn,
 };
 use crate::traits::agent::Agent;
 use derivative::Derivative;
@@ -31,17 +38,17 @@ pub struct AgentGPT {
     /// Unique identifier for the agent.
     pub id: Cow<'static, str>,
 
-    /// The objective or mission of the agent.
-    pub objective: Cow<'static, str>,
+    /// The behavior (mission/prompt) of the agent.
+    pub behavior: Cow<'static, str>,
 
-    /// The logical or physical position of the agent.
-    pub position: Cow<'static, str>,
+    /// The persona (role label) of the agent.
+    pub persona: Cow<'static, str>,
 
     /// The current operational status of the agent.
     pub status: Status,
 
-    /// Hot memory containing past communications.
-    pub memory: Vec<Communication>,
+    /// Hot memory containing past messages.
+    pub memory: Vec<Message>,
 
     /// Tools available to the agent.
     pub tools: Vec<Tool>,
@@ -52,8 +59,8 @@ pub struct AgentGPT {
     /// Optional planner to manage goal sequencing.
     pub planner: Option<Planner>,
 
-    /// Persona defines behavior style and traits.
-    pub persona: Persona,
+    /// Profile defines personality traits and behavioral style.
+    pub profile: Persona,
 
     /// Optional self-reflection module for introspection or evaluation.
     pub reflection: Option<Reflection>,
@@ -126,14 +133,14 @@ impl Default for AgentGPT {
     fn default() -> Self {
         Self {
             id: Cow::Owned(Uuid::new_v4().to_string()),
-            objective: Cow::Borrowed(""),
-            position: Cow::Borrowed(""),
+            behavior: Cow::Borrowed(""),
+            persona: Cow::Borrowed(""),
             status: Status::default(),
             memory: vec![],
             tools: vec![],
             knowledge: Knowledge::default(),
             planner: None,
-            persona: Persona {
+            profile: Persona {
                 name: Cow::Borrowed("Default"),
                 traits: vec![],
                 behavior_script: None,
@@ -173,30 +180,22 @@ impl Default for AgentGPT {
 }
 
 impl AgentGPT {
-    /// Adds a communication to the memory of the agent.
-    ///
-    /// # Arguments
-    ///
-    /// * `communication` - The communication to be added to the memory.
-    pub fn add_communication(&mut self, communication: Communication) {
-        self.memory.push(communication);
+    /// Adds a message to the memory of the agent.
+    pub fn add_message(&mut self, message: Message) {
+        self.memory.push(message);
     }
 
     /// Creates a new instance of `AgentGPT` with owned strings.
     ///
     /// # Arguments
     ///
-    /// * `objective` - The objective of the agent.
-    /// * `position` - The position of the agent.
-    ///
-    /// # Returns
-    ///
-    /// A new fully initialized instance of `AgentGPT`.
-    pub fn new_owned(objective: String, position: String) -> Self {
+    /// * `persona` - The persona (role label) of the agent.
+    /// * `behavior` - The behavior (mission/prompt) of the agent.
+    pub fn new_owned(persona: String, behavior: String) -> Self {
         Self {
             id: Cow::Owned(Uuid::new_v4().to_string()),
-            objective: Cow::Owned(objective),
-            position: Cow::Owned(position.clone()),
+            behavior: Cow::Owned(behavior),
+            persona: Cow::Owned(persona.clone()),
             status: Status::Idle,
 
             memory: vec![],
@@ -211,8 +210,8 @@ impl AgentGPT {
                 current_plan: vec![],
             }),
 
-            persona: Persona {
-                name: position.into(),
+            profile: Persona {
+                name: persona.into(),
                 traits: vec![],
                 behavior_script: None,
             },
@@ -263,17 +262,13 @@ impl AgentGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - The objective of the agent.
-    /// * `position` - The position of the agent.
-    ///
-    /// # Returns
-    ///
-    /// A new fully initialized instance of `AgentGPT`.
-    pub fn new_borrowed(objective: &'static str, position: &'static str) -> Self {
+    /// * `persona` - The persona (role label) of the agent.
+    /// * `behavior` - The behavior (mission/prompt) of the agent.
+    pub fn new_borrowed(persona: &'static str, behavior: &'static str) -> Self {
         Self {
             id: Cow::Owned(Uuid::new_v4().to_string()),
-            objective: Cow::Borrowed(objective),
-            position: Cow::Borrowed(position),
+            behavior: Cow::Borrowed(behavior),
+            persona: Cow::Borrowed(persona),
             status: Status::Idle,
 
             memory: vec![],
@@ -288,8 +283,8 @@ impl AgentGPT {
                 current_plan: vec![],
             }),
 
-            persona: Persona {
-                name: position.into(),
+            profile: Persona {
+                name: persona.into(),
                 traits: vec![],
                 behavior_script: None,
             },
@@ -398,13 +393,13 @@ impl AgentGPT {
 }
 
 impl Agent for AgentGPT {
-    /// Creates a new `AgentGPT` instance with the given objective and position.
-    fn new(objective: Cow<'static, str>, position: Cow<'static, str>) -> Self {
+    /// Creates a new `AgentGPT` instance with the given persona and behavior.
+    fn new(persona: Cow<'static, str>, behavior: Cow<'static, str>) -> Self {
         Self {
             id: Cow::Owned(Uuid::new_v4().to_string()),
 
-            objective,
-            position: position.clone(),
+            behavior,
+            persona: persona.clone(),
             status: Status::Idle,
 
             memory: vec![],
@@ -419,8 +414,8 @@ impl Agent for AgentGPT {
                 current_plan: vec![],
             }),
 
-            persona: Persona {
-                name: position,
+            profile: Persona {
+                name: persona,
                 traits: vec![],
                 behavior_script: None,
             },
@@ -472,14 +467,14 @@ impl Agent for AgentGPT {
         self.status = status;
     }
 
-    /// Returns the agent's objective.
-    fn objective(&self) -> &Cow<'static, str> {
-        &self.objective
+    /// Returns the agent's behavior (mission/prompt).
+    fn behavior(&self) -> &Cow<'static, str> {
+        &self.behavior
     }
 
-    /// Returns the agent's current position.
-    fn position(&self) -> &Cow<'static, str> {
-        &self.position
+    /// Returns the agent's persona (role label).
+    fn persona(&self) -> &Cow<'static, str> {
+        &self.persona
     }
 
     /// Returns the agent's current status.
@@ -487,8 +482,8 @@ impl Agent for AgentGPT {
         &self.status
     }
 
-    /// Returns the agent's memory log of communications.
-    fn memory(&self) -> &Vec<Communication> {
+    /// Returns the agent's memory log of messages.
+    fn memory(&self) -> &Vec<Message> {
         &self.memory
     }
 
@@ -507,9 +502,9 @@ impl Agent for AgentGPT {
         self.planner.as_ref()
     }
 
-    /// Returns the agent's persona configuration.
-    fn persona(&self) -> &Persona {
-        &self.persona
+    /// Returns the agent's profile (personality traits).
+    fn profile(&self) -> &Persona {
+        &self.profile
     }
 
     /// Returns a list of agents this agent collaborates with.
@@ -541,12 +536,12 @@ impl Agent for AgentGPT {
         &self.context
     }
 
-    /// Returns the list of current tasks or tasks.
+    /// Returns the list of current tasks.
     fn tasks(&self) -> &Vec<Task> {
         &self.tasks
     }
 
-    fn memory_mut(&mut self) -> &mut Vec<Communication> {
+    fn memory_mut(&mut self) -> &mut Vec<Message> {
         &mut self.memory
     }
 
@@ -570,7 +565,7 @@ impl AgentGPT {
         let payload = serde_json::to_vec(&msg)?;
 
         for (peer_id, client) in &self.clients {
-            let mut message = Message {
+            let mut message = iac_rs::prelude::Message {
                 from: self.id.clone().into(),
                 to: peer_id.clone(),
                 msg_type: MessageType::Broadcast,
@@ -630,7 +625,7 @@ impl Network for AgentGPT {
         tokio::spawn(async move {
             loop {
                 for (peer_id, client) in &clients {
-                    let msg = Message::ping(&id, peer_id, 0);
+                    let msg = iac_rs::prelude::Message::ping(&id, peer_id, 0);
                     let result = {
                         let client = client.lock().await;
                         client.send(msg).await
@@ -664,8 +659,8 @@ impl Network for AgentGPT {
     }
 
     async fn broadcast(&self, payload: &str) -> anyhow::Result<()> {
-        let tasks = self.clients.iter().map(|(peer_id, client)| {
-            let mut msg = Message::broadcast(&self.id, payload, 0);
+        let broadcast_tasks = self.clients.iter().map(|(peer_id, client)| {
+            let mut msg = iac_rs::prelude::Message::broadcast(&self.id, payload, 0);
             msg.to = peer_id.clone();
             let client = client.clone();
             async move {
@@ -684,7 +679,14 @@ impl Network for AgentGPT {
             }
         });
 
-        futures::future::join_all(tasks).await;
+        futures::future::join_all(broadcast_tasks).await;
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

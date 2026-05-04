@@ -29,11 +29,12 @@ Now that you have your Nylas project set up, you need to set the Client ID, Clie
 1. **Set the Nylas Client ID, Client Secret, and System Token:** Open your project's configuration file or `.env` file, where you store environment variables.
 
 1. **Add the Nylas Client ID , Client Secret, and System Token:** In your configuration file, add the following environment variables, replacing `<Your_Nylas_Client_ID>`, `<Your_Nylas_Client_Secret>`, and `<Your_Nylas_System_Token>` with the actual values you obtained from the Nylas dashboard:
-     ```toml
-     NYLAS_SYSTEM_TOKEN=<Your_Nylas_System_Token>
-     NYLAS_CLIENT_ID=<Your_Nylas_Client_ID>
-     NYLAS_CLIENT_SECRET=<Your_Nylas_Client_Secret>
-     ```
-     - Save the changes to your configuration file.
+   ```toml
+   NYLAS_SYSTEM_TOKEN=<Your_Nylas_System_Token>
+   NYLAS_CLIENT_ID=<Your_Nylas_Client_ID>
+   NYLAS_CLIENT_SECRET=<Your_Nylas_Client_Secret>
+   ```
+
+   - Save the changes to your configuration file.
 
 By setting the `NYLAS_CLIENT_ID`, `NYLAS_CLIENT_SECRET` and `NYLAS_SYSTEM_TOKEN` environment variables, your application will have the necessary credentials to authenticate and interact with the Nylas API for email and scheduling functionality.

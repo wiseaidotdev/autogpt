@@ -21,7 +21,7 @@ This is an example demonstrating how to use AutoGPT with Gemini with a persistan
 1. Fork/Clone the GitHub repository.
 
    ```sh
-   git clone https://github.com/kevin-rs/autogpt
+   git clone https://github.com/wiseaidotdev/autogpt
    ```
 
 1. Navigate to the application directory.

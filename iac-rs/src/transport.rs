@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use anyhow::{Context, Result, anyhow};
 use quinn::Connection;
 use quinn::Endpoint;
@@ -20,7 +27,7 @@ use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 /// Generate a QUIC server config with a self-signed certificate
 pub fn init_server() -> Result<ServerConfig> {
     let subject_alt_names = vec![
-        "kevin-rs.dev".to_string(),
+        "wiseai.dev".to_string(),
         "localhost".to_string(),
         "0.0.0.0".to_string(),
         "127.0.0.1".to_string(),
@@ -124,3 +131,10 @@ pub async fn connect(addr: &str) -> Result<Connection> {
 
     Ok(conn)
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

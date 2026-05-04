@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use autogpt::agents::git::GitGPT;
 use autogpt::common::utils::{Status, Task};
 use autogpt::traits::agent::Agent;
@@ -24,13 +31,13 @@ async fn test_git_gpt_execute() {
         fs::remove_dir_all(test_workspace).unwrap();
     }
 
-    let mut git_agent = GitGPT::new("Commit all changes", "GitGPT").await;
+    let mut git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
 
     let dummy_file_path = format!("{test_workspace}/hello.txt");
     fs::create_dir_all(test_workspace).unwrap();
     fs::write(&dummy_file_path, "Hello, GitGPT!").unwrap();
 
-    let mut tasks = Task {
+    let mut task = Task {
         description: "Initial commit - Added hello.txt".into(),
         scope: None,
         urls: None,
@@ -39,7 +46,7 @@ async fn test_git_gpt_execute() {
         api_schema: None,
     };
 
-    let result = git_agent.execute(&mut tasks, true, false, 1).await;
+    let result = git_agent.execute(&mut task, true, false, 1).await;
 
     assert!(result.is_ok());
     assert_eq!(git_agent.get_agent().status(), &Status::Completed);
@@ -53,3 +60,10 @@ async fn test_git_gpt_execute() {
 
     fs::remove_dir_all(test_workspace).unwrap();
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

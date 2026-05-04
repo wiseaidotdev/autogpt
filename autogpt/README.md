@@ -9,39 +9,35 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/wiseaidev)
 [![Jupyter Notebook](https://img.shields.io/badge/Jupyter-Notebook-blue.svg?logo=Jupyter&logoColor=orange)](https://jupyter.org/)
 
-[![Share On Reddit](https://img.shields.io/badge/share%20on-reddit-red?logo=reddit)](https://reddit.com/submit?url=https://github.com/kevin-rs/autogpt&title=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
-[![Share On Ycombinator](https://img.shields.io/badge/share%20on-hacker%20news-orange?logo=ycombinator)](https://news.ycombinator.com/submitlink?u=https://github.com/kevin-rs/autogpt&t=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
-[![Share On X](https://img.shields.io/badge/share%20on-X-03A9F4?logo=x)](https://twitter.com/share?url=https://github.com/kevin-rs/autogpt&text=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
-[![Share On Meta](https://img.shields.io/badge/share%20on-meta-1976D2?logo=meta)](https://www.facebook.com/sharer/sharer.php?u=https://github.com/kevin-rs/autogpt)
-[![Share On Linkedin](https://img.shields.io/badge/share%20on-linkedin-3949AB?logo=linkedin)](https://www.linkedin.com/shareArticle?url=https://github.com/kevin-rs/autogpt&title=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
+[![Share On Reddit](https://img.shields.io/badge/share%20on-reddit-red?logo=reddit)](https://reddit.com/submit?url=https://github.com/wiseaidotdev/autogpt&title=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
+[![Share On Ycombinator](https://img.shields.io/badge/share%20on-hacker%20news-orange?logo=ycombinator)](https://news.ycombinator.com/submitlink?u=https://github.com/wiseaidotdev/autogpt&t=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
+[![Share On X](https://img.shields.io/badge/share%20on-X-03A9F4?logo=x)](https://twitter.com/share?url=https://github.com/wiseaidotdev/autogpt&text=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
+[![Share On Meta](https://img.shields.io/badge/share%20on-meta-1976D2?logo=meta)](https://www.facebook.com/sharer/sharer.php?u=https://github.com/wiseaidotdev/autogpt)
+[![Share On Linkedin](https://img.shields.io/badge/share%20on-linkedin-3949AB?logo=linkedin)](https://www.linkedin.com/shareArticle?url=https://github.com/wiseaidotdev/autogpt&title=World%27s%20First%2C%20Multimodal%2C%20Zero%20Shot%2C%20Most%20General%2C%20Most%20Capable%2C%20Blazingly%20Fast%2C%20and%20Extremely%20Flexible%20Pure%20Rust%20AI%20Agentic%20Framework.)
 
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/kevin-rs/autogpt/tree/main.svg?style=svg&circle-token=CCIPRJ_PifnErxs6Ze2XWpjmUeRV1_4e84825e0f6a366716a77c2dbbe93c3bd3e507fa)](https://dl.circleci.com/status-badge/redirect/gh/kevin-rs/autogpt/tree/main)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/wiseaidotdev/autogpt/tree/main.svg?style=svg&circle-token=CCIPRJ_PifnErxs6Ze2XWpjmUeRV1_4e84825e0f6a366716a77c2dbbe93c3bd3e507fa)](https://dl.circleci.com/status-badge/redirect/gh/wiseaidotdev/autogpt/tree/main)
 [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)
 [![Github](https://img.shields.io/badge/launch-Github-181717.svg?logo=github&logoColor=white)](./examples/basic.ipynb)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/kevin-rs/autogpt/main?filepath=examples/basic.ipynb)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kevin-rs/autogpt/blob/main/examples/basic.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wiseaidotdev/autogpt/main?filepath=examples/basic.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wiseaidotdev/autogpt/blob/main/examples/basic.ipynb)
 
 ![banner](https://github.com/user-attachments/assets/c642e17a-f164-44b5-9cd1-bc1711cebbbf)
 
-|                                                  🐧 Linux `(Recommended)`                                                  |                                                         🪟 Windows                                                         |                                                          🐋                                                          |                                                          🐋                                                          |
-| :------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: |
-|            [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)             |            [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)             | [![Docker](https://img.shields.io/docker/pulls/kevinrsdev/autogpt.svg)](https://hub.docker.com/r/kevinrsdev/autogpt) | [![Docker](https://img.shields.io/docker/pulls/kevinrsdev/orchgpt.svg)](https://hub.docker.com/r/kevinrsdev/orchgpt) |
-|             ![linux-demo](https://raw.githubusercontent.com/kevin-rs/autogpt/refs/heads/main/assets/linux.png)             |           ![windows-demo](https://raw.githubusercontent.com/kevin-rs/autogpt/refs/heads/main/assets/windows.png)           |                                                          -                                                           |                                                          -                                                           |
-|        Method 1: [Download Executable File](https://github.com/kevin-rs/autogpt/releases/download/v0.1.14/autogpt)         |             [Download `.exe` File](https://github.com/kevin-rs/autogpt/releases/download/v0.1.14/autogpt.exe)              |                                                          -                                                           |                                                          -                                                           |
-|                                      Method 2: `cargo install autogpt --all-features`                                      |                                           `cargo install autogpt --all-features`                                           |                                       `docker pull kevinrsdev/autogpt:0.1.14`                                        |                                       `docker pull kevinrsdev/orchgpt:0.1.14`                                        |
-| [**Set Environment Variables**](https://github.com/kevin-rs/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) | [**Set Environment Variables**](https://github.com/kevin-rs/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) |     [**Set Environment Variables**](https://github.com/kevin-rs/autogpt/blob/main/INSTALLATION.md#-using-docker)     |     [**Set Environment Variables**](https://github.com/kevin-rs/autogpt/blob/main/INSTALLATION.md#-using-docker)     |
-|                                               `autogpt -h` <br> `orchgpt -h`                                               |                                                      `autogpt.exe -h`                                                      |                                      `docker run kevinrsdev/autogpt:0.1.14 -h`                                       |                                      `docker run kevinrsdev/orchgpt:0.1.14 -h`                                       |
+|                                                    🐧 Linux `(Recommended)`                                                    |                                                           🪟 Windows                                                           |                                                          🐋                                                          |                                                          🐋                                                          |
+| :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: |
+|              [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)               |              [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)               | [![Docker](https://img.shields.io/docker/pulls/kevinrsdev/autogpt.svg)](https://hub.docker.com/r/kevinrsdev/autogpt) | [![Docker](https://img.shields.io/docker/pulls/kevinrsdev/orchgpt.svg)](https://hub.docker.com/r/kevinrsdev/orchgpt) |
+|             ![linux-demo](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/linux.png)             |           ![windows-demo](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/windows.png)           |                                                          -                                                           |                                                          -                                                           |
+|        Method 1: [Download Executable File](https://github.com/wiseaidotdev/autogpt/releases/download/v0.1.14/autogpt)         |             [Download `.exe` File](https://github.com/wiseaidotdev/autogpt/releases/download/v0.1.14/autogpt.exe)              |                                                          -                                                           |                                                          -                                                           |
+|                                        Method 2: `cargo install autogpt --all-features`                                        |                                             `cargo install autogpt --all-features`                                             |                                       `docker pull kevinrsdev/autogpt:0.1.14`                                        |                                       `docker pull kevinrsdev/orchgpt:0.1.14`                                        |
+| [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) | [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) |   [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#-using-docker)   |   [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#-using-docker)   |
+|                                                 `autogpt -h` <br> `orchgpt -h`                                                 |                                                        `autogpt.exe -h`                                                        |                                      `docker run kevinrsdev/autogpt:0.1.14 -h`                                       |                                      `docker run kevinrsdev/orchgpt:0.1.14 -h`                                       |
 
 <video src="https://github.com/user-attachments/assets/ecd82549-a48f-49c2-b751-23f74820bf3d"></video>
 
 </div>
 
-> [!WARNING]  
-> Due to the uninspiring, generic, and uncreative nature of AI, I have decided to archive this project. It was originally a submission for [a hackathon](https://devpost.com/software/autogpt), and I continued working on it to practice and improve my systems engineering skills. I learned allot about Rust while building this project. However, I no longer enjoy building AI systems.
->
-> I am currently focused on game and web development, as well as Alive Internet Theory. This was a fun project through which I learned a great deal and invented new ideas along the way. Many thanks to the Lord Linus for the amazing contributions <3.
->
-> Bye 👋!
+> [!NOTE]
+> This project is under active development. There is also a parallel project, [**lmm**](https://github.com/wiseaidotdev/lmm), under equally active development; It does **not** use LLMs at all. Instead, it uses equation-based intelligence to predict new words and reason without gradient-trained models. Check it out if you're interested in a fundamentally different approach to machine intelligence!
 
 AutoGPT is a pure rust framework that simplifies AI agent creation and management for various tasks. Its remarkable speed and versatility are complemented by a mesh of built-in interconnected GPTs, ensuring exceptional performance and adaptability.
 
@@ -80,7 +76,50 @@ Please refer to [our tutorial](INSTALLATION.md) for guidance on installing, runn
 
 ## 🔄 Workflow
 
-AutoGPT supports 3 modes of operation, non agentic and both standalone and distributed agentic use cases:
+AutoGPT supports 4 modes of operation: interactive, direct prompt, standalone agentic, and distributed agentic.
+
+### 0. 🤖 GenericGPT Interactive Mode (Default)
+
+When you run `autogpt` with **no subcommand or flags**, it launches an interactive AI shell powered by **GenericGPT**: a fully-fledged conversational agent with session management, model switching, and multi-provider support:
+
+```sh
+autogpt
+```
+
+<video src="https://github.com/user-attachments/assets/61dc0840-64ce-488f-a20f-7c408eb67461"></video>
+
+The interactive shell supports the following commands:
+
+| Command         | Description                                                 |
+| --------------- | ----------------------------------------------------------- |
+| `<your prompt>` | Send a message to the active AI agent                       |
+| `/help`         | Show available commands                                     |
+| `/provider`     | Switch AI provider (Gemini, OpenAI, Anthropic, XAI, Cohere) |
+| `/models`       | Browse and switch between supported models                  |
+| `/sessions`     | List and resume previous sessions                           |
+| `/status`       | Show current model, provider, and directory                 |
+| `/workspace`    | Show the current workspace path                             |
+| `/clear`        | Clear the terminal                                          |
+| `exit` / `quit` | Save session and quit                                       |
+
+> Press `ESC` at any time to interrupt a running generation.
+
+```mermaid
+flowchart TD
+    A([User launches autogpt]) --> B{Any args?}
+    B -- No --> C[GenericGPT Interactive Shell]
+    B -- Yes --> D{Subcommand}
+    C --> E[Select Provider & Model]
+    E --> F[Enter Prompt Loop]
+    F --> G[Agent Generates Response]
+    G --> F
+    D -- arch --> H[ArchitectGPT]
+    D -- back --> I[BackendGPT]
+    D -- front --> J[FrontendGPT]
+    D -- design --> K[DesignerGPT]
+    D -- manage --> L[ManagerGPT]
+    D -- -p prompt --> M[Direct LLM Prompt]
+```
 
 ### 1. 💬 Direct Prompt Mode
 
@@ -88,61 +127,34 @@ AutoGPT supports 3 modes of operation, non agentic and both standalone and distr
 
 In this mode, you can use the CLI to interact with the LLM directly, no need to define or configure agents. Use the `-p` flag to send prompts to your preferred LLM provider quickly and easily.
 
+```sh
+autogpt -p "Explain the Rust borrow checker in simple terms"
+```
+
 ### 2. 🧠 Agentic Networkless Mode (Standalone)
 
 <video src="https://github.com/user-attachments/assets/7d47b1d8-b2f2-4d23-a1f4-da926e425330"></video>
 
 In this mode, the user runs an individual `autogpt` agent directly via a subcommand (e.g., `autogpt arch`). Each agent operates independently without needing a networked orchestrator.
 
-```sh
-                       +------------------------------------+
-                       |                User                |
-                       |             Provides               |
-                       |          Project Prompt            |
-                       +------------------+-----------------+
-                                          |
-                                          v
-                       +------------------+-----------------+
-                       |               ManagerGPT           |
-                       |            Distributes Tasks       |
-                       |          to Backend, Frontend,     |
-                       |           Designer, Architect      |
-                       +------------------+-----------------+
-                                          |
-                                          v
-   +--------------------------+-----------+----------+----------------------+
-   |                          |                      |                      |
-   |                          v                      v                      v
-+--+---------+       +--------+--------+       +-----+-------+       +-----+-------+
-|  Backend   |       |    Frontend     |       |  Designer   |       |  Architect  |
-|    GPT     |       |      GPT        |  ...  |    GPT      |       |  GPT        |
-|            |       |                 |       |  (Optional) |       |             |
-+--+---------+       +-----------------+       +-------------+       +-------------+
-   |                          |                       |                       |
-   v                          v                       v                       v
-(Backend Logic)        (Frontend Logic)   ...   (Designer Logic)        (Architect Logic)
-   |                          |                       |                       |
-   +--------------------------+----------+------------+-----------------------+
-                                         |
-                                         v
-                      +------------------+-----------------+
-                      |               ManagerGPT           |
-                      |       Collects and Consolidates    |
-                      |        Results from Agents         |
-                      +------------------+-----------------+
-                                         |
-                                         v
-                      +------------------+-----------------+
-                      |                User                |
-                      |            Receives Final          |
-                      |             Output from            |
-                      |            ManagerGPT              |
-                      +------------------------------------+
+```mermaid
+flowchart TD
+    User([User Provides Project Prompt]) --> M[ManagerGPT\nDistributes Tasks]
+    M --> B[BackendGPT]
+    M --> F[FrontendGPT]
+    M --> D[DesignerGPT\nOptional]
+    M --> A[ArchitectGPT]
+    B --> BL[Backend Logic]
+    F --> FL[Frontend Logic]
+    D --> DL[Design Assets]
+    A --> AL[Architecture Diagram]
+    BL & FL & DL & AL --> M2[ManagerGPT\nCollects & Consolidates]
+    M2 --> Result([User Receives Final Output])
 ```
 
 - ✍️ **User Input**: Provide a project's goal (e.g. "Develop a full stack app that fetches today's weather. Use the axum web framework for the backend and the Yew rust framework for the frontend.").
 - 🚀 **Initialization**: AutoGPT initializes based on the user's input, creating essential components such as the `ManagerGPT` and individual agent instances (ArchitectGPT, BackendGPT, FrontendGPT).
-- 🛠️ **Agent Configuration**: Each agent is configured with its unique objectives and capabilities, aligning them with the project's defined goals. This configuration ensures that agents contribute effectively to the project's objectives.
+- 🛠️ **Agent Configuration**: Each agent is configured with its unique objectives and capabilities, aligning them with the project's defined goals.
 - 📋 **Task Allocation**: ManagerGPT distributes tasks among agents considering their capabilities and project requirements.
 - ⚙️ **Task Execution**: Agents execute tasks asynchronously, leveraging their specialized functionalities.
 - 🔄 **Feedback Loop**: Continuous feedback updates users on project progress and addresses issues.
@@ -155,44 +167,28 @@ In networking mode, `autogpt` connects to an external orchestrator (`orchgpt`) o
 
 AutoGPT introduces a novel and scalable communication protocol called [`IAC`](IAC.md) (Inter/Intra-Agent Communication), enabling seamless and secure interactions between agents and orchestrators, inspired by [operating system IPC mechanisms](https://en.wikipedia.org/wiki/Inter-process_communication).
 
-In networking mode, AutoGPT utilizes a layered architecture:
-
-```sh
-                       +------------------------------------+
-                       |                User                |
-                       |         Sends Prompt via CLI       |
-                       +------------------+-----------------+
-                                          |
-                                          v
-                            TLS + Protobuf over TCP to:
-                       +------------------+-----------------+
-                       |             Orchestrator           |
-                       |     Receives and Routes Commands   |
-                       +-----------+----------+-------------+
-                                   |          |
-     +-----------------------------+          +----------------------------+
-     |                                                                     |
-     v                                                                     v
-+--------------------+                                         +--------------------+
-|   ArchitectGPT     |<---------------- IAC ------------------>|    ManagerGPT      |
-+--------------------+                                         +--------------------+
-   |                        Agent Layer:                                   |
-   |          (BackendGPT, FrontendGPT, DesignerGPT)                       |
-   +-------------------------------------+---------------------------------+
-                                         |
-                                         v
-                               Task Execution & Collection
-                                         |
-                                         v
-                           +---------------------------+
-                           |           User            |
-                           |     Receives Final Output |
-                           +---------------------------+
+```mermaid
+flowchart TD
+    U([User sends prompt via CLI]) -- TLS + Protobuf over TCP --> O[Orchestrator\nReceives & Routes Commands]
+    O --> AG[ArchitectGPT]
+    O --> MG[ManagerGPT]
+    AG <-- IAC --> MG
+    subgraph IAC [" IAC — Inter/Intra-Agent Communication Layer"]
+        MG
+        BG[BackendGPT]
+        FG[FrontendGPT]
+        DG[DesignerGPT]
+    end
+    MG -- IAC --> BG
+    MG -- IAC --> FG
+    MG -- IAC --> DG
+    BG & FG & DG --> Exec[Task Execution & Collection]
+    Exec --> R([User Receives Final Output])
 ```
 
 All communication happens securely over **TLS + TCP**, with messages encoded in **Protocol Buffers (protobuf)** for efficiency and structure.
 
-1. User Input: The user provides a project prompt like:
+1. **User Input**: The user provides a project prompt like:
 
    ```sh
    /architect create "fastapi app" | python
@@ -200,24 +196,23 @@ All communication happens securely over **TLS + TCP**, with messages encoded in 
 
    This is securely sent to the Orchestrator over TLS.
 
-1. Initialization: The Orchestrator parses the command and initializes the appropriate agent (e.g., `ArchitectGPT`).
+1. **Initialization**: The Orchestrator parses the command and initializes the appropriate agent (e.g., `ArchitectGPT`).
 
-1. Agent Configuration: Each agent is instantiated with its specialized goals:
-
+1. **Agent Configuration**: Each agent is instantiated with its specialized goals:
    - **ArchitectGPT**: Plans system structure
    - **BackendGPT**: Generates backend logic
    - **FrontendGPT**: Builds frontend UI
    - **DesignerGPT**: Handles design
 
-1. Task Allocation: `ManagerGPT` dynamically assigns subtasks to agents using the IAC protocol. It determines which agent should perform what based on capabilities and the original user goal.
+1. **Task Allocation**: `ManagerGPT` dynamically assigns subtasks to agents using the IAC protocol. It determines which agent should perform what based on capabilities and the original user goal.
 
-1. Task Execution: Agents execute their tasks, communicate with their subprocesses or other agents via IAC (inter/intra communication), and push updates or results back to the orchestrator.
+1. **Task Execution**: Agents execute their tasks, communicate with their subprocesses or other agents via IAC (inter/intra communication), and push updates or results back to the orchestrator.
 
-1. Feedback Loop: Throughout execution, agents return status reports. The `ManagerGPT` collects all output, and the Orchestrator sends it back to the user.
+1. **Feedback Loop**: Throughout execution, agents return status reports. The `ManagerGPT` collects all output, and the Orchestrator sends it back to the user.
 
 ## 🤖 Available Agents
 
-At the current release, Autogpt consists of 8 built-in specialized autonomous AI agents ready to assist you in bringing your ideas to life!
+At the current release, AutoGPT consists of 9 built-in specialized autonomous AI agents ready to assist you in bringing your ideas to life!
 Refer to [our guide](AGENTS.md) to learn more about how the built-in agents work.
 
 ## 📌 Examples

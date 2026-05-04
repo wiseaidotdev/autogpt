@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::cli::autogpt::{generator::generate_code, parser::parse_yaml, utils::*};
 use anyhow::Result;
 use std::path::Path;
@@ -29,3 +36,10 @@ pub fn handle_build(out: Option<String>) -> Result<()> {
     success("✅ Build complete");
     Ok(())
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

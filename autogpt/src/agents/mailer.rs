@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `MailerGPT` agent.
 //!
 //! This module provides functionality for utilizing emails to generate text-based
@@ -5,13 +12,13 @@
 //! understands email contents and produces textual responses tailored to user requirements.
 
 use crate::agents::agent::AgentGPT;
-use crate::common::utils::{ClientType, Communication, Status, Task};
+use crate::common::utils::{ClientType, Message, Status, Task};
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Functions};
 use anyhow::{Result, anyhow};
 use colored::*;
 use nylas::client::Nylas;
-use nylas::messages::Message;
+use nylas::messages::Message as NylasMessage;
 use std::borrow::Cow;
 use std::env::var;
 use tracing::{debug, info};
@@ -37,7 +44,13 @@ use gems::{
     traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -63,7 +76,7 @@ impl MailerGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - Objective description for MailerGPT.
+    /// * `behavior` - behavior description for MailerGPT.
     /// * `position` - Position description for MailerGPT.
     ///
     /// # Returns
@@ -72,13 +85,13 @@ impl MailerGPT {
     ///
     /// # Business Logic
     ///
-    /// - Initializes the GPT agent with the given objective and position.
+    /// - Initializes the GPT agent with the given persona and behavior.
     /// - Creates a Nylas client for interacting with email services.
     /// - Creates a Gemini client for interacting with Gemini API.
     ///
-    pub async fn new(objective: &'static str, position: &'static str) -> Self {
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+    pub async fn new(persona: &'static str, behavior: &'static str) -> Self {
+        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
         let client_id = var("NYLAS_CLIENT_ID").unwrap_or_default().to_owned();
         let client_secret = var("NYLAS_CLIENT_SECRET").unwrap_or_default().to_owned();
         let access_token = var("NYLAS_ACCESS_TOKEN").unwrap_or_default().to_owned();
@@ -91,7 +104,7 @@ impl MailerGPT {
 
         info!(
             "{}",
-            format!("[*] {:?}: 🛠️  Getting ready!", agent.position(),)
+            format!("[*] {:?}: 🛠️  Getting ready!", agent.persona(),)
                 .bright_white()
                 .bold()
         );
@@ -119,12 +132,12 @@ impl MailerGPT {
     /// - Logs the number of messages read.
     /// - Returns a subset of the last 5 emails for processing.
     ///
-    pub async fn get_latest_emails(&mut self) -> Result<Vec<Message>> {
+    pub async fn get_latest_emails(&mut self) -> Result<Vec<NylasMessage>> {
         let messages = self.nylas_client.messages().all().await.unwrap();
 
         info!(
             "[*] {:?}: Read {:?} Messages",
-            self.agent.position(),
+            self.agent.persona(),
             messages.len()
         );
 
@@ -147,12 +160,12 @@ impl MailerGPT {
     /// # Business Logic
     ///
     /// - Retrieves the latest emails.
-    /// - Logs communications for user input and assistant response.
+    /// - Logs messages for user input and assistant response.
     /// - Constructs a request for generating text based on email content and the provided prompt.
     /// - Sends the request to the Gemini client to generate text.
     /// - Returns the generated text.
     pub async fn generate_text_from_emails(&mut self, prompt: &str) -> Result<String> {
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
                 "Requested to generate text based on emails with prompt: '{prompt}'"
@@ -161,7 +174,7 @@ impl MailerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(format!(
                         "Requested to generate text based on emails with prompt: '{prompt}'"
@@ -173,14 +186,14 @@ impl MailerGPT {
             Ok(e) => e,
             Err(err) => {
                 let error_msg = format!("Failed to fetch latest emails: {err}");
-                self.agent.add_communication(Communication {
+                self.agent.add_message(Message {
                     role: Cow::Borrowed("system"),
                     content: Cow::Owned(error_msg.clone()),
                 });
                 #[cfg(feature = "mem")]
                 {
                     let _ = self
-                        .save_ltm(Communication {
+                        .save_ltm(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         })
@@ -190,7 +203,7 @@ impl MailerGPT {
             }
         };
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(
                 "Analyzing latest emails and generating text based on provided prompt..."
@@ -200,7 +213,7 @@ impl MailerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(
                         "Analyzing latest emails and generating text based on provided prompt..."
@@ -228,7 +241,7 @@ impl MailerGPT {
                     Ok(response) => response,
                     Err(err) => {
                         let error_msg = format!("Failed to generate content from emails: {err}");
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         });
@@ -236,7 +249,7 @@ impl MailerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("system"),
                                     content: Cow::Owned(error_msg.clone()),
                                 })
@@ -282,7 +295,7 @@ impl MailerGPT {
 
                     Err(err) => {
                         let error_msg = format!("Failed to generate content from emails: {err}");
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         });
@@ -290,7 +303,7 @@ impl MailerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("system"),
                                     content: Cow::Owned(error_msg.clone()),
                                 })
@@ -328,7 +341,7 @@ impl MailerGPT {
                     Err(err) => {
                         let error_msg =
                             format!("Failed to generate content from Claude API: {err}");
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         });
@@ -336,7 +349,7 @@ impl MailerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("system"),
                                     content: Cow::Owned(error_msg.clone()),
                                 })
@@ -369,7 +382,7 @@ impl MailerGPT {
                     Ok(chat) => {
                         let response_text = chat.choices[0].message.content.clone();
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(response_text.clone()),
                         });
@@ -377,7 +390,7 @@ impl MailerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(response_text.clone()),
                                 })
@@ -387,7 +400,7 @@ impl MailerGPT {
                         #[cfg(debug_assertions)]
                         debug!(
                             "[*] {:?}: Got XAI Output: {:?}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             response_text
                         );
 
@@ -397,7 +410,7 @@ impl MailerGPT {
                     Err(err) => {
                         let err_msg = format!("Failed to generate content from emails: {err}");
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(err_msg.clone()),
                         });
@@ -405,7 +418,7 @@ impl MailerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(err_msg.clone()),
                                 })
@@ -417,15 +430,45 @@ impl MailerGPT {
                 }
             }
 
+            #[cfg(feature = "co")]
+            ClientType::Cohere(co_client) => {
+                use cohere_rust::api::GenerateModel;
+                use cohere_rust::api::generate::GenerateRequest;
+
+                let prompt_text = format!("User Request:{prompt}\n\nEmails:{emails:?}");
+                let gen_request = GenerateRequest {
+                    prompt: &prompt_text,
+                    model: Some(GenerateModel::Custom("command-a-03-2025".to_string())),
+                    max_tokens: Some(2048),
+                    ..Default::default()
+                };
+
+                match co_client.generate(&gen_request).await {
+                    Ok(generations) => generations
+                        .iter()
+                        .map(|g| g.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    Err(e) => {
+                        let error_msg = format!("Failed to generate content via Cohere API: {e:?}");
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("system"),
+                            content: Cow::Owned(error_msg.clone()),
+                        });
+                        return Err(anyhow!(error_msg));
+                    }
+                }
+            }
+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(anyhow!(
-                    "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                    "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                 ));
             }
         };
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(
                 "Generated text from emails based on the given prompt.".to_string(),
@@ -435,7 +478,7 @@ impl MailerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(
                         "Generated text from emails based on the given prompt.".to_string(),
@@ -446,7 +489,7 @@ impl MailerGPT {
 
         info!(
             "[*] {:?}: Got Response: {:?}",
-            self.agent.position(),
+            self.agent.persona(),
             gemini_response
         );
 
@@ -506,18 +549,18 @@ impl AsyncFunctions for MailerGPT {
     ///
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         _execute: bool,
         _browse: bool,
         _max_tries: u64,
     ) -> Result<()> {
         info!(
             "{}",
-            format!("[*] {:?}: Executing task:", self.agent.position(),)
+            format!("[*] {:?}: Executing task:", self.agent.persona(),)
                 .bright_white()
                 .bold()
         );
-        for task in tasks.clone().description.clone().split("- ") {
+        for task in task.clone().description.clone().split("- ") {
             if !task.trim().is_empty() {
                 info!("{} {}", "•".bright_white().bold(), task.trim().cyan());
             }
@@ -526,10 +569,9 @@ impl AsyncFunctions for MailerGPT {
         while self.agent.status() != &Status::Completed {
             match self.agent.status() {
                 Status::Idle => {
-                    debug!("[*] {:?}: Idle", self.agent.position());
+                    debug!("[*] {:?}: Idle", self.agent.persona());
 
-                    let _generated_text =
-                        self.generate_text_from_emails(&tasks.description).await?;
+                    let _generated_text = self.generate_text_from_emails(&task.description).await?;
 
                     _count += 1;
                     self.agent.update(Status::Completed);
@@ -543,70 +585,95 @@ impl AsyncFunctions for MailerGPT {
         Ok(())
     }
 
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     async fn generate(&mut self, _request: &str) -> Result<String> {
         Ok("".to_string())
     }
 
-    /// Saves a communication to long-term memory for the agent.
+    /// Saves a message to long-term memory for the agent.
     ///
     /// # Arguments
     ///
-    /// * `communication` - The communication to save, which contains the role and content.
+    /// * `message` - The message to save, which contains the role and content.
     ///
     /// # Returns
     ///
-    /// (`Result<()>`): Result indicating the success or failure of saving the communication.
+    /// (`Result<()>`): Result indicating the success or failure of saving the message.
     ///
     /// # Business Logic
     ///
-    /// - This method uses the `save_long_term_memory` util function to save the communication into the agent's long-term memory.
-    /// - The communication is embedded and stored using the agent's unique ID as the namespace.
-    /// - It handles the embedding and metadata for the communication, ensuring it's stored correctly.
+    /// - This method uses the `save_long_term_memory` util function to save the message into the agent's long-term memory.
+    /// - The message is embedded and stored using the agent's unique ID as the namespace.
+    /// - It handles the embedding and metadata for the message, ensuring it's stored correctly.
     #[cfg(feature = "mem")]
-    async fn save_ltm(&mut self, communication: Communication) -> Result<()> {
-        save_long_term_memory(&mut self.client, self.agent.id.clone(), communication).await
+    async fn save_ltm(&mut self, message: Message) -> Result<()> {
+        save_long_term_memory(&mut self.client, self.agent.id.clone(), message).await
     }
 
-    /// Retrieves all communications stored in the agent's long-term memory.
+    /// Retrieves all messages stored in the agent's long-term memory.
     ///
     /// # Returns
     ///
-    /// (`Result<Vec<Communication>>`): A result containing a vector of communications retrieved from the agent's long-term memory.
+    /// (`Result<Vec<Message>>`): A result containing a vector of messages retrieved from the agent's long-term memory.
     ///
     /// # Business Logic
     ///
-    /// - This method fetches the stored communications for the agent by interacting with the `load_long_term_memory` function.
-    /// - The function will return a list of communications that are indexed by the agent's unique ID.
-    /// - It handles the retrieval of the stored metadata and content for each communication.
+    /// - This method fetches the stored messages for the agent by interacting with the `load_long_term_memory` function.
+    /// - The function will return a list of messages that are indexed by the agent's unique ID.
+    /// - It handles the retrieval of the stored metadata and content for each message.
     #[cfg(feature = "mem")]
-    async fn get_ltm(&self) -> Result<Vec<Communication>> {
+    async fn get_ltm(&self) -> Result<Vec<Message>> {
         load_long_term_memory(self.agent.id.clone()).await
     }
 
-    /// Retrieves the concatenated context of all communications in the agent's long-term memory.
+    /// Retrieves the concatenated context of all messages in the agent's long-term memory.
     ///
     /// # Returns
     ///
-    /// (`String`): A string containing the concatenated role and content of all communications stored in the agent's long-term memory.
+    /// (`String`): A string containing the concatenated role and content of all messages stored in the agent's long-term memory.
     ///
     /// # Business Logic
     ///
     /// - This method calls the `long_term_memory_context` function to generate a string representation of the agent's entire long-term memory.
-    /// - The context string is composed of each communication's role and content, joined by new lines.
+    /// - The context string is composed of each message's role and content, joined by new lines.
     /// - It provides a quick overview of the agent's memory in a human-readable format.
     #[cfg(feature = "mem")]
     async fn ltm_context(&self) -> String {
         long_term_memory_context(self.agent.id.clone()).await
     }
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     async fn imagen(&mut self, _request: &str) -> Result<Vec<u8>> {
         // TODO: Impl
         Ok(Default::default())
     }
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     async fn stream(&mut self, _request: &str) -> Result<ReqResponse> {
         // TODO: Impl
         Ok(ReqResponse(None))
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

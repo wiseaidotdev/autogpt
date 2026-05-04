@@ -10,7 +10,7 @@ Ready to contribute? Here's how to set up `autogpt` for local development.
 2. Clone your fork locally:
 
 ```sh
-git clone https://github.com/kevin-rs/autogpt.git
+git clone https://github.com/wiseaidotdev/autogpt.git
 ```
 
 3. Navigate to the recently created directory:

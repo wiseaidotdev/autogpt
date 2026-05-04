@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use autogpt::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,8 +39,8 @@ async fn test_agents_collaboration() -> Result<()> {
     let mut clients2 = HashMap::new();
     clients2.insert("designer".into(), Arc::new(Mutex::new(client2)));
 
-    let mut designer = AgentGPT::new("designer".into(), "objective".into());
-    let mut frontend = AgentGPT::new("frontend".into(), "objective".into());
+    let mut designer = AgentGPT::new("designer".into(), "behavior".into());
+    let mut frontend = AgentGPT::new("frontend".into(), "behavior".into());
 
     designer.signer = signer1.clone();
     designer.clients = clients1.clone();
@@ -129,3 +136,10 @@ async fn test_agents_collaboration() -> Result<()> {
 
     Ok(())
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

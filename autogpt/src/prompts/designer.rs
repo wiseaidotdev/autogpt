@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #[allow(unused)]
 pub(crate) const WEB_DESIGNER_PROMPT: &str = r#"
 Your task is to describe the web design layout elements based on the provided image. Describe each ui element from left to right, top to bottom.
@@ -32,3 +39,10 @@ Example:
   Description: "An interactive map displaying real-time weather data for different locations, with customizable layers for precipitation, temperature, and wind speed."
   Output: [your web design image goes here]]
 "#;
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

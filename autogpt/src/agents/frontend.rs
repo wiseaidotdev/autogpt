@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `FrontendGPT` agent.
 //!
 //! This module provides functionality for generating frontend code based on prompts
@@ -16,12 +23,12 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut frontend_agent = FrontendGPT::new(
-//!         "Generate frontend code",
 //!         "Frontend Developer",
+//!         "Generate frontend code",
 //!         "rust",
 //!     ).await;
 //!
-//!     let mut tasks = Task {
+//!     let mut task = Task {
 //!         description: "Create a landing page with a sign-up form".into(),
 //!         scope: None,
 //!         urls: None,
@@ -30,7 +37,7 @@
 //!         api_schema: None,
 //!     };
 //!
-//!     if let Err(err) = frontend_agent.execute(&mut tasks, true, false, 3).await {
+//!     if let Err(err) = frontend_agent.execute(&mut task, true, false, 3).await {
 //!         eprintln!("Error executing frontend tasks: {:?}", err);
 //!     }
 //! }
@@ -45,9 +52,9 @@ use crate::collaboration::Collaborator;
 use crate::common::utils::spinner;
 #[allow(unused_imports)]
 use crate::common::utils::{
-    Capability, ClientType, Communication, ContextManager, GenerationOutput, Goal, Knowledge,
-    OutputKind, Persona, Planner, Reflection, Route, Scope, Status, Task, TaskScheduler, Tool,
-    extract_array, strip_code_blocks,
+    Capability, ClientType, ContextManager, GenerationOutput, Goal, Knowledge, Message, OutputKind,
+    Persona, Planner, Reflection, Route, Scope, Status, Task, TaskScheduler, Tool, extract_array,
+    strip_code_blocks,
 };
 use crate::prompts::frontend::{
     FIX_CODE_PROMPT, FRONTEND_CODE_PROMPT, IMPROVED_FRONTEND_CODE_PROMPT,
@@ -85,15 +92,17 @@ use anthropic_ai_sdk::types::message::{
 
 #[cfg(feature = "gem")]
 use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
-    messages::{Content, Message},
-    models::Model,
-    stream::StreamBuilder,
-    traits::CTrait,
+    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
+    stream::StreamBuilder, traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 use async_trait::async_trait;
@@ -128,7 +137,7 @@ impl FrontendGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - Objective description for FrontendGPT.
+    /// * `behavior` - behavior description for FrontendGPT.
     /// * `position` - Position description for FrontendGPT.
     /// * `language` - Programming language used for frontend development.
     ///
@@ -139,11 +148,11 @@ impl FrontendGPT {
     /// # Business Logic
     ///
     /// - Constructs the workspace directory path for FrontendGPT.
-    /// - Initializes the GPT agent with the given objective, position, and language.
+    /// - Initializes the GPT agent with the given persona, behavior, and language.
     /// - Creates clients for interacting with Gemini API
     pub async fn new(
-        objective: &'static str,
-        position: &'static str,
+        persona: &'static str,
+        behavior: &'static str,
         language: &'static str,
     ) -> Self {
         let workspace = var("AUTOGPT_WORKSPACE")
@@ -219,15 +228,15 @@ impl FrontendGPT {
             _ => panic!("Unsupported language, consider open an Issue/PR"),
         };
         #[allow(unused)]
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
 
         #[allow(unused)]
         let client = ClientType::from_env();
 
         info!(
             "{}",
-            format!("[*] {:?}: 🛠️  Getting ready!", agent.position(),)
+            format!("[*] {:?}: 🛠️  Getting ready!", agent.persona(),)
                 .bright_white()
                 .bold()
         );
@@ -250,7 +259,7 @@ impl FrontendGPT {
     pub async fn build_request(
         &mut self,
         prompt: &str,
-        tasks: &mut Task,
+        task: &mut Task,
         output_type: OutputKind,
     ) -> Result<GenerationOutput> {
         #[cfg(feature = "mem")]
@@ -261,11 +270,11 @@ impl FrontendGPT {
         let request: String = format!(
             "{}\n\nTask Description: {}\nPrevious Conversation: {:?}",
             prompt,
-            tasks.description,
+            task.description,
             self.agent.memory(),
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(request.clone()),
         });
@@ -273,7 +282,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(request.clone()),
                 })
@@ -283,12 +292,18 @@ impl FrontendGPT {
         #[allow(unused)]
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(&request).await?;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(response_text.clone()),
         });
@@ -296,21 +311,21 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(response_text.clone()),
                 })
                 .await;
         }
 
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         match output_type {
             OutputKind::Text => Ok(GenerationOutput::Text(strip_code_blocks(&response_text))),
             OutputKind::UrlList => {
                 let urls: Vec<Cow<'static, str>> =
                     serde_json::from_str(&extract_array(&response_text).unwrap_or_default())?;
-                tasks.urls = Some(urls.clone());
+                task.urls = Some(urls.clone());
                 self.agent.update(Status::InUnitTesting);
                 Ok(GenerationOutput::UrlList(urls))
             }
@@ -339,11 +354,11 @@ impl FrontendGPT {
     ///
     /// - Determines the file path based on the programming language.
     /// - Reads the template code from the specified file.
-    /// - Logs communications throughout the code generation process.
+    /// - Logs messages throughout the code generation process.
     /// - Constructs a request for generating frontend code using the template and project description.
     /// - Sends the request to the Gemini API to generate frontend code.
     /// - Writes the generated frontend code to the appropriate file.
-    pub async fn generate_frontend_code(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn generate_frontend_code(&mut self, task: &mut Task) -> Result<String> {
         let path = self.workspace.clone();
 
         let frontend_path = match self.language {
@@ -357,31 +372,31 @@ impl FrontendGPT {
 
         let prompt = format!(
             "{}\n\nCode Template: {}\nProject Description: {}",
-            FRONTEND_CODE_PROMPT, template, tasks.description
+            FRONTEND_CODE_PROMPT, template, task.description
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
                 "Request to generate frontend code for project: {}",
-                tasks.description
+                task.description
             )),
         });
 
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(format!(
                         "Request to generate frontend code for project: {}",
-                        tasks.description
+                        task.description
                     )),
                 })
                 .await;
         }
 
-        let output = self.build_request(&prompt, tasks, OutputKind::Text).await?;
+        let output = self.build_request(&prompt, task, OutputKind::Text).await?;
 
         let code = match output {
             GenerationOutput::Text(code) => code,
@@ -399,7 +414,7 @@ impl FrontendGPT {
 
         fs::write(&frontend_main_path, &code).await?;
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(format!(
                 "Frontend code generated and saved to '{frontend_main_path}'"
@@ -409,7 +424,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(format!(
                         "Frontend code generated and saved to '{frontend_main_path}'"
@@ -418,9 +433,9 @@ impl FrontendGPT {
                 .await;
         }
 
-        tasks.frontend_code = Some(code.clone().into());
+        task.frontend_code = Some(code.clone().into());
         self.agent.update(Status::Completed);
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(code)
     }
@@ -429,7 +444,7 @@ impl FrontendGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks containing the project description and existing code.
+    /// * `task` - A mutable reference to the task containing the project description and existing code.
     ///
     /// # Returns
     ///
@@ -442,36 +457,36 @@ impl FrontendGPT {
     /// # Business Logic
     ///
     /// - Constructs a request for improving existing frontend code using project description and current code.
-    /// - Logs communication entries for tracing user intent and AI response.
+    /// - Logs message entries for tracing user intent and AI response.
     /// - Sends the request to the Gemini API to improve the frontend code.
     /// - Writes the improved frontend code to the appropriate file.
-    pub async fn improve_frontend_code(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn improve_frontend_code(&mut self, task: &mut Task) -> Result<String> {
         let path = self.workspace.clone();
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
                 "Request to improve frontend code for project: {}",
-                tasks.description
+                task.description
             )),
         });
 
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(format!(
                         "Request to improve frontend code for project: {}",
-                        tasks.description
+                        task.description
                     )),
                 })
                 .await;
         }
 
-        let existing_code = tasks.clone().frontend_code.unwrap_or_default();
+        let existing_code = task.clone().frontend_code.unwrap_or_default();
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(
                 "Improving existing frontend code using project description...".to_string(),
@@ -481,7 +496,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(
                         "Improving existing frontend code using project description...".to_string(),
@@ -492,10 +507,10 @@ impl FrontendGPT {
 
         let prompt = format!(
             "{}\n\nCode Template: {}\nProject Description: {}",
-            IMPROVED_FRONTEND_CODE_PROMPT, existing_code, tasks.description
+            IMPROVED_FRONTEND_CODE_PROMPT, existing_code, task.description
         );
 
-        let output = self.build_request(&prompt, tasks, OutputKind::Text).await?;
+        let output = self.build_request(&prompt, task, OutputKind::Text).await?;
 
         let improved_code = match output {
             GenerationOutput::Text(code) => code,
@@ -515,7 +530,7 @@ impl FrontendGPT {
 
         fs::write(&frontend_path, &improved_code).await?;
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(format!("Improved frontend code saved to '{frontend_path}'",)),
         });
@@ -523,7 +538,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(format!(
                         "Improved frontend code saved to '{frontend_path}'"
@@ -532,10 +547,10 @@ impl FrontendGPT {
                 .await;
         }
 
-        tasks.frontend_code = Some(improved_code.clone().into());
+        task.frontend_code = Some(improved_code.clone().into());
 
         self.agent.update(Status::Completed);
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(improved_code)
     }
@@ -544,7 +559,7 @@ impl FrontendGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks containing the project description and existing code.
+    /// * `task` - A mutable reference to the task containing the project description and existing code.
     ///
     /// # Returns
     ///
@@ -557,10 +572,10 @@ impl FrontendGPT {
     /// # Business Logic
     ///
     /// - Constructs a request for fixing bugs in the frontend code using project description and existing code.
-    /// - Logs communications throughout the process.
+    /// - Logs messages throughout the process.
     /// - Sends the request to the Gemini API to fix bugs in the frontend code.
     /// - Writes the fixed frontend code to the appropriate file.
-    pub async fn fix_code_bugs(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn fix_code_bugs(&mut self, task: &mut Task) -> Result<String> {
         let path = self.workspace.clone();
 
         let bugs_description = self
@@ -568,7 +583,7 @@ impl FrontendGPT {
             .clone()
             .unwrap_or_else(|| "No bug description provided.".into());
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
                 "Request to fix bugs in frontend code. Known bugs: {bugs_description}"
@@ -578,7 +593,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(format!(
                         "Request to fix bugs in frontend code. Known bugs: {bugs_description}"
@@ -587,13 +602,13 @@ impl FrontendGPT {
                 .await;
         }
 
-        let buggy_code = tasks.clone().frontend_code.unwrap_or_default();
+        let buggy_code = task.clone().frontend_code.unwrap_or_default();
 
         let prompt = format!(
             "{FIX_CODE_PROMPT}\n\nBuggy Code: {buggy_code}\nBugs: {bugs_description}\n\nFix all bugs."
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(
                 "Attempting to fix bugs in the provided frontend code...".to_string(),
@@ -603,7 +618,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(
                         "Attempting to fix bugs in the provided frontend code...".to_string(),
@@ -612,7 +627,7 @@ impl FrontendGPT {
                 .await;
         }
 
-        let output = self.build_request(&prompt, tasks, OutputKind::Text).await?;
+        let output = self.build_request(&prompt, task, OutputKind::Text).await?;
 
         let fixed_code = match output {
             GenerationOutput::Text(code) => code,
@@ -632,7 +647,7 @@ impl FrontendGPT {
 
         fs::write(&frontend_path, &fixed_code).await?;
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(format!(
                 "Bugs fixed. Updated code saved to '{frontend_path}'"
@@ -642,7 +657,7 @@ impl FrontendGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(format!(
                         "Bugs fixed. Updated code saved to '{frontend_path}'"
@@ -651,16 +666,16 @@ impl FrontendGPT {
                 .await;
         }
 
-        tasks.frontend_code = Some(fixed_code.clone().into());
+        task.frontend_code = Some(fixed_code.clone().into());
 
         self.agent.update(Status::Completed);
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         Ok(fixed_code)
     }
     pub fn think(&self) -> String {
-        let objective = self.agent.objective();
-        format!("How do I build and test the frontend for '{objective}'")
+        let behavior = self.agent.behavior();
+        format!("How do I build and test the frontend for '{behavior}'")
     }
 
     pub fn plan(&mut self, context: String) -> Goal {
@@ -710,7 +725,7 @@ impl FrontendGPT {
     pub async fn act(
         &mut self,
         goal: Goal,
-        tasks: &mut Task,
+        task: &mut Task,
         _execute: bool,
         max_tries: u64,
     ) -> Result<()> {
@@ -718,7 +733,7 @@ impl FrontendGPT {
             "{}",
             format!(
                 "[*] {:?}: Executing goal: {}",
-                self.agent.position(),
+                self.agent.persona(),
                 goal.description
             )
             .cyan()
@@ -727,19 +742,19 @@ impl FrontendGPT {
 
         match goal.description.to_lowercase() {
             desc if desc.contains("generate") => {
-                let _ = self.generate_frontend_code(tasks).await;
+                let _ = self.generate_frontend_code(task).await;
                 self.agent.update(Status::Active);
             }
             desc if desc.contains("improve") => {
-                let _ = self.improve_frontend_code(tasks).await;
+                let _ = self.improve_frontend_code(task).await;
                 self.agent.update(Status::InUnitTesting);
             }
             desc if desc.contains("test") => {
                 let path = &self.workspace.to_string();
-                let _ = self.unit_test_and_build(path, tasks, max_tries).await;
+                let _ = self.unit_test_and_build(path, task, max_tries).await;
             }
             desc if desc.contains("fix") => {
-                let _ = self.fix_code_bugs(tasks).await;
+                let _ = self.fix_code_bugs(task).await;
                 self.agent.update(Status::InUnitTesting);
             }
             _ => {
@@ -747,7 +762,7 @@ impl FrontendGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Unknown goal: {}",
-                        self.agent.position(),
+                        self.agent.persona(),
                         goal.description
                     )
                     .yellow()
@@ -759,21 +774,18 @@ impl FrontendGPT {
     pub async fn reflect(&mut self) {
         let summary = format!(
             "Reflection: Reviewing progress on '{}'",
-            self.agent.objective()
+            self.agent.behavior()
         );
 
-        self.agent.memory_mut().push(Communication {
+        self.agent.memory_mut().push(Message {
             role: Cow::Borrowed("assistant"),
             content: summary.clone().into(),
         });
 
-        self.agent
-            .context_mut()
-            .recent_messages
-            .push(Communication {
-                role: Cow::Borrowed("assistant"),
-                content: summary.into(),
-            });
+        self.agent.context_mut().recent_messages.push(Message {
+            role: Cow::Borrowed("assistant"),
+            content: summary.into(),
+        });
 
         if let Some(reflection) = self.agent.reflection() {
             let feedback = (reflection.evaluation_fn)(&self.agent);
@@ -781,14 +793,14 @@ impl FrontendGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Self Reflection: {}",
-                    self.agent.position(),
+                    self.agent.persona(),
                     feedback
                 )
                 .blue()
             );
         }
     }
-    pub fn has_completed_objective(&self) -> bool {
+    pub fn has_completed_behavior(&self) -> bool {
         self.planner()
             .map(|p| p.current_plan.iter().all(|g| g.completed))
             .unwrap_or(false)
@@ -803,14 +815,14 @@ impl FrontendGPT {
             }
         }
     }
-    fn display_task_info(&self, tasks: &Task) {
+    fn display_task_info(&self, task: &Task) {
         info!(
             "{}",
-            format!("[*] {:?}: Executing task:", self.agent.position())
+            format!("[*] {:?}: Executing task:", self.agent.persona())
                 .bright_white()
                 .bold()
         );
-        for task in tasks.clone().description.clone().split("- ") {
+        for task in task.clone().description.clone().split("- ") {
             if !task.trim().is_empty() {
                 info!("{} {}", "•".bright_white().bold(), task.trim().cyan());
             }
@@ -819,7 +831,7 @@ impl FrontendGPT {
     pub async fn unit_test_and_build(
         &mut self,
         path: &str,
-        tasks: &mut Task,
+        task: &mut Task,
         max_tries: u64,
     ) -> Result<()> {
         for attempt in 1..=max_tries {
@@ -827,7 +839,7 @@ impl FrontendGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Attempting to build frontend...",
-                    self.agent.position()
+                    self.agent.persona()
                 )
                 .bright_white()
                 .bold()
@@ -848,7 +860,7 @@ impl FrontendGPT {
                     if stderr.trim().is_empty() {
                         info!(
                             "{}",
-                            format!("[*] {:?}: Build succeeded!", self.agent.position())
+                            format!("[*] {:?}: Build succeeded!", self.agent.persona())
                                 .bright_green()
                                 .bold()
                         );
@@ -860,7 +872,7 @@ impl FrontendGPT {
 
                         error!(
                             "{}",
-                            format!("[*] {:?}: Build failed: {}", self.agent.position(), stderr)
+                            format!("[*] {:?}: Build failed: {}", self.agent.persona(), stderr)
                                 .bright_red()
                         );
 
@@ -869,7 +881,7 @@ impl FrontendGPT {
                                 "{}",
                                 format!(
                                     "[*] {:?}: Max build attempts reached. Aborting...",
-                                    self.agent.position()
+                                    self.agent.persona()
                                 )
                                 .bright_red()
                             );
@@ -878,13 +890,13 @@ impl FrontendGPT {
                                 "{}",
                                 format!(
                                     "[*] {:?}: Retrying build... ({}/{})",
-                                    self.agent.position(),
+                                    self.agent.persona(),
                                     attempt,
                                     max_tries
                                 )
                                 .yellow()
                             );
-                            let _ = self.fix_code_bugs(tasks).await;
+                            let _ = self.fix_code_bugs(task).await;
                         }
                     }
                 }
@@ -893,7 +905,7 @@ impl FrontendGPT {
                         "{}",
                         format!(
                             "[*] {:?}: Build command execution failed: {}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             e
                         )
                         .bright_red()
@@ -930,80 +942,80 @@ impl FrontendGPT {
                         .stderr(Stdio::null())
                         .status();
 
-                    if let Ok(status) = create_venv.await {
-                        if status.success() {
-                            let main_py_path = format!("{path}/main.py");
-                            let main_py_content = fs::read_to_string(&main_py_path)
-                                .await
-                                .expect("Failed to read main.py");
+                    if let Ok(status) = create_venv.await
+                        && status.success()
+                    {
+                        let main_py_path = format!("{path}/main.py");
+                        let main_py_content = fs::read_to_string(&main_py_path)
+                            .await
+                            .expect("Failed to read main.py");
 
-                            let mut packages = vec![];
+                        let mut packages = vec![];
 
-                            for line in main_py_content.lines() {
-                                if line.starts_with("from ") || line.starts_with("import ") {
-                                    let parts: Vec<&str> = line.split_whitespace().collect();
+                        for line in main_py_content.lines() {
+                            if line.starts_with("from ") || line.starts_with("import ") {
+                                let parts: Vec<&str> = line.split_whitespace().collect();
 
-                                    if let Some(pkg) = parts.get(1) {
-                                        let root_pkg = pkg.split('.').next().unwrap_or(pkg);
-                                        if !packages.contains(&root_pkg) {
-                                            packages.push(root_pkg);
-                                        }
+                                if let Some(pkg) = parts.get(1) {
+                                    let root_pkg = pkg.split('.').next().unwrap_or(pkg);
+                                    if !packages.contains(&root_pkg) {
+                                        packages.push(root_pkg);
                                     }
                                 }
                             }
-                            if !packages.is_empty() {
-                                if !packages.contains(&"uvicorn") {
-                                    packages.push("uvicorn");
-                                }
-                                if !packages.contains(&"httpx") {
-                                    packages.push("httpx");
-                                }
-                                for pkg in &packages {
-                                    let install_status = Command::new(&pip_path)
-                                        .arg("install")
-                                        .arg(pkg)
-                                        .stdout(Stdio::null())
-                                        .stderr(Stdio::null())
-                                        .status();
+                        }
+                        if !packages.is_empty() {
+                            if !packages.contains(&"uvicorn") {
+                                packages.push("uvicorn");
+                            }
+                            if !packages.contains(&"httpx") {
+                                packages.push("httpx");
+                            }
+                            for pkg in &packages {
+                                let install_status = Command::new(&pip_path)
+                                    .arg("install")
+                                    .arg(pkg)
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null())
+                                    .status();
 
-                                    match install_status.await {
-                                        Ok(status) if status.success() => {
-                                            info!(
+                                match install_status.await {
+                                    Ok(status) if status.success() => {
+                                        info!(
                                                 "{}",
                                                 format!(
                                                     "[*] {:?}: Successfully installed Python package '{}'",
-                                                    self.agent.position(),
+                                                    self.agent.persona(),
                                                     pkg
                                                 )
                                                 .bright_white()
                                                 .bold()
                                             );
-                                        }
-                                        Err(e) => {
-                                            error!(
+                                    }
+                                    Err(e) => {
+                                        error!(
                                                 "{}",
                                                 format!(
                                                     "[*] {:?}: Failed to install Python package '{}': {}",
-                                                    self.agent.position(),
+                                                    self.agent.persona(),
                                                     pkg,
                                                     e
                                                 )
                                                 .bright_red()
                                                 .bold()
                                             );
-                                        }
-                                        _ => {
-                                            error!(
+                                    }
+                                    _ => {
+                                        error!(
                                                 "{}",
                                                 format!(
                                                     "[*] {:?}: Installation of package '{}' exited with an error",
-                                                    self.agent.position(),
+                                                    self.agent.persona(),
                                                     pkg
                                                 )
                                                 .bright_red()
                                                 .bold()
                                             );
-                                        }
                                     }
                                 }
                             }
@@ -1074,9 +1086,9 @@ impl Executor for FrontendGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks to be executed.
-    /// * `execute` - A boolean indicating whether to execute the tasks.
-    /// * `max_tries` - Maximum number of attempts to execute tasks.
+    /// * `task` - A mutable reference to the task to be executed.
+    /// * `execute` - A boolean indicating whether to execute the task.
+    /// * `max_tries` - Maximum number of attempts to execute the task.
     ///
     /// # Returns
     ///
@@ -1094,7 +1106,7 @@ impl Executor for FrontendGPT {
     ///
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         _browse: bool,
         max_tries: u64,
@@ -1103,12 +1115,12 @@ impl Executor for FrontendGPT {
 
         info!(
             "{}",
-            format!("[*] {:?}: Executing task:", self.agent.position())
+            format!("[*] {:?}: Executing task:", self.agent.persona())
                 .bright_white()
                 .bold()
         );
 
-        self.display_task_info(tasks);
+        self.display_task_info(task);
 
         while self.agent.status() != &Status::Completed {
             #[cfg(feature = "cli")]
@@ -1125,7 +1137,7 @@ impl Executor for FrontendGPT {
 
             #[cfg(feature = "cli")]
             let pb = spinner("Acting on goal...");
-            self.act(goal.clone(), tasks, execute, max_tries).await?;
+            self.act(goal.clone(), task, execute, max_tries).await?;
             #[cfg(feature = "cli")]
             pb.finish_with_message("Action complete!");
 
@@ -1141,10 +1153,10 @@ impl Executor for FrontendGPT {
             #[cfg(feature = "cli")]
             pb.finish_with_message("Reflection complete!");
 
-            if self.has_completed_objective() {
+            if self.has_completed_behavior() {
                 info!(
                     "{}",
-                    format!("[*] {:?}: Objective complete!", self.agent.position())
+                    format!("[*] {:?}: behavior complete!", self.agent.persona())
                         .green()
                         .bold()
                 );
@@ -1157,3 +1169,10 @@ impl Executor for FrontendGPT {
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

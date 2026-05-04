@@ -2,12 +2,12 @@
 
 # 🛰️ IAC Protocol
 
-[![Protocol Spec](https://img.shields.io/badge/Spec-IAC-purple.svg)](https://github.com/kevin-rs/autogpt)
+[![Protocol Spec](https://img.shields.io/badge/Spec-IAC-purple.svg)](https://github.com/wiseaidotdev/autogpt)
 [![Language](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/Status-Experimental-blueviolet.svg)](https://github.com/kevin-rs/autogpt)
+[![Version](https://img.shields.io/badge/Status-Experimental-blueviolet.svg)](https://github.com/wiseaidotdev/autogpt)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/wiseaidev)
 
-![logo](https://raw.githubusercontent.com/kevin-rs/autogpt/refs/heads/main/iac-rs/assets/logo.webp)
+![logo](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/iac-rs/assets/logo.webp)
 
 </div>
 
@@ -176,7 +176,7 @@ This shows:
 
 ## 🚀 Performance
 
-![benchmark](https://raw.githubusercontent.com/kevin-rs/autogpt/refs/heads/main/iac-rs/benches/iac_benchmark.png)
+![benchmark](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/iac-rs/benches/iac_benchmark.png)
 
 Through benchmarks (by running `cargo bench`), we found that **IAC achieves exceptional speed and efficiency**, with **sub-millisecond signed broadcasts** and tight tail latencies. Median message latency sits around **296 µs**, with the **mean at approximately 312 µs**, and the **99th percentile remaining under 650 µs** across 1,000 async roundtrips. Built on QUIC, Ed25519, and Protobuf, IAC eliminates traditional overhead via **zero-RTT transport**, **concurrent streams**, and **fully async execution**. This makes IAC ideal for **high-frequency agent coordination**, **distributed task orchestration**, and **real-time multi-agent systems**, all with cryptographic guarantees and minimal delay.
 
@@ -192,4 +192,4 @@ Let's build the next-gen agent protocol together.
 
 ## 📜 License
 
-IAC is licensed under the [MIT License](./LICENSE.md). You are free to use, modify, and distribute the protocol in your own applications.
+IAC is licensed under the [MIT License](../LICENSE.md). You are free to use, modify, and distribute the protocol in your own applications.

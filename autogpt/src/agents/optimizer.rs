@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `OptimizerGPT` agent.
 //!
 //! This module provides functionality for managing optimization and modularization tasks
@@ -17,12 +24,12 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut optimizer_agent = OptimizerGPT::new(
-//!         "Optimize and modularize backend code",
 //!         "OptimizerGPT",
+//!         "Optimize and modularize backend code",
 //!         "rust",
 //!     ).await;
 //!
-//!     let mut tasks = Task {
+//!     let mut task = Task {
 //!         description: "Refactor backend code for better modularization".into(),
 //!         scope: None,
 //!         urls: None,
@@ -31,7 +38,7 @@
 //!         api_schema: None,
 //!     };
 //!
-//!     if let Err(err) = optimizer_agent.execute(&mut tasks, true, false, 3).await {
+//!     if let Err(err) = optimizer_agent.execute(&mut task, true, false, 3).await {
 //!         eprintln!("Error executing optimization tasks: {:?}", err);
 //!     }
 //! }
@@ -45,12 +52,12 @@
 //! - **Multilingual Support**: The agent supports multiple programming languages including Python, Rust,
 //!   and JavaScript, adapting to the respective syntax and optimization needs.
 //!
-//! - **Communication with Gemini API**: It communicates with the Gemini API for generating optimized
+//! - **Message with Gemini API**: It messages with the Gemini API for generating optimized
 //!   code suggestions, bug fixes, and improvements based on the provided code and prompts.
 //!
 //! # Methods
 //!
-//! - **new**: Initializes a new `OptimizerGPT` instance with the objective, position, and programming language.
+//! - **new**: Initializes a new `OptimizerGPT` instance with the persona, behavior, and programming language.
 //! - **save_module**: Saves the generated or optimized module to the specified workspace.
 //! - **execute**: Executes the modularization and optimization task, interacting with the Gemini API to
 //!   generate optimized code and modularize large codebases into smaller components.
@@ -68,8 +75,8 @@ use crate::agents::agent::AgentGPT;
 use crate::collaboration::Collaborator;
 #[allow(unused_imports)]
 use crate::common::utils::{
-    Capability, ClientType, Communication, ContextManager, Goal, Knowledge, Persona, Planner,
-    Reflection, Route, Scope, Status, Task, TaskScheduler, Tool, strip_code_blocks,
+    Capability, ClientType, ContextManager, Goal, Knowledge, Message, Persona, Planner, Reflection,
+    Route, Scope, Status, Task, TaskScheduler, Tool, strip_code_blocks,
 };
 use crate::prompts::optimizer::{MODULARIZE_PROMPT, SPLIT_PROMPT};
 use crate::traits::agent::Agent;
@@ -101,15 +108,17 @@ use anthropic_ai_sdk::types::message::{
 
 #[cfg(feature = "gem")]
 use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
-    messages::{Content, Message},
-    models::Model,
-    stream::StreamBuilder,
-    traits::CTrait,
+    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
+    stream::StreamBuilder, traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -128,7 +137,7 @@ pub struct OptimizerGPT {
     /// This directory is where all generated or modified code is stored.
     pub workspace: Cow<'static, str>,
 
-    /// Represents the GPT agent responsible for handling optimization and modularization tasks.
+    /// Represents the GPT agent responsible for handling optimization and modularization task.
     agent: AgentGPT,
 
     /// Represents the programming language used in the current workspace (e.g., "python", "rust", "javascript").
@@ -145,8 +154,8 @@ impl OptimizerGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - A static string describing the agent's main purpose or mission.
-    /// * `position` - A static string indicating the role or position of the agent.
+    /// * `persona` - A static string indicating the role or persona of the agent.
+    /// * `behavior` - A static string describing the agent's main behavior or mission.
     /// * `language` - A string slice specifying the programming language used in the workspace (e.g., "python", "rust", "javascript").
     ///
     /// # Returns
@@ -156,7 +165,7 @@ impl OptimizerGPT {
     /// # Behavior
     ///
     /// - Sets up a workspace directory under the `AUTOGPT_WORKSPACE` environment variable or defaults to `"workspace/backend"`.
-    /// - Initializes the internal GPT agent with the given objective and position.
+    /// - Initializes the internal GPT agent with the given persona and behavior.
     /// - Creates a Gemini client using credentials pulled from environment variables (`GEMINI_API_KEY` and `GEMINI_MODEL`).
     /// - Logs status updates and prepares the environment for optimization tasks.
     ///
@@ -165,7 +174,7 @@ impl OptimizerGPT {
     /// - Ensures the working directory exists before continuing.
     /// - Establishes the foundational state for performing code modularization or refactoring.
     #[allow(unused)]
-    pub async fn new(objective: &'static str, position: &'static str, language: &str) -> Self {
+    pub async fn new(persona: &'static str, behavior: &'static str, language: &str) -> Self {
         let base_workspace = var("AUTOGPT_WORKSPACE").unwrap_or("workspace/".to_string());
         let workspace = format!("{base_workspace}/backend");
 
@@ -178,14 +187,14 @@ impl OptimizerGPT {
             debug!("Workspace directory '{}' already exists.", workspace);
         }
 
-        let mut agent = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
 
         let client = ClientType::from_env();
 
         info!(
             "{}",
-            format!("[*] {:?}: 🔧 Optimizer ready!", agent.position())
+            format!("[*] {:?}: 🔧 Optimizer ready!", agent.persona())
                 .bright_white()
                 .bold()
         );
@@ -243,20 +252,26 @@ impl OptimizerGPT {
     ///
     /// - Sends a request to the Gemini API using the provided prompt.
     /// - Strips any markdown-style code block formatting (e.g., backticks) from the returned content.
-    /// - Adds the Gemini response to the agent's internal communication log for traceability.
+    /// - Adds the Gemini response to the agent's internal message log for traceability.
     /// - If memory is enabled (via the `mem` feature), the response is also stored in the agent's long-term memory.
     /// - In the event of an error from the Gemini API, logs and saves the error message, and returns an empty string.
     ///
     /// # Business Logic
     ///
-    /// - Facilitates communication between the agent and the Gemini model.
+    /// - Facilitates messaging between the agent and the Gemini model.
     /// - Ensures that all model interactions are logged and optionally persisted for future context or audits.
     /// - Prepares the returned content for further downstream processing (e.g., file writing or parsing).
     #[allow(unused)]
     pub async fn generate_and_track(&mut self, request: &str) -> Result<String> {
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(request).await?;
         }
@@ -281,7 +296,7 @@ impl OptimizerGPT {
 /// # Business Logic
 ///
 /// - Acts on tasks passed down from previous GPT roles (e.g., frontend gpt, backend gpt).
-/// - Interacts with the user or system via the `AgentGPT` communication layer.
+/// - Interacts with the user or system via the `AgentGPT` message layer.
 /// - Applies AI-driven code analysis and improvements.
 /// - Performs logging and memory storage where applicable.
 /// - Manages retry logic and ensures clean fallback/error handling.
@@ -296,7 +311,7 @@ impl Executor for OptimizerGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - Mutable reference to the `Task` struct containing task details.
+    /// * `task` - Mutable reference to the `Task` struct containing task details.
     /// * `_execute` - Boolean flag indicating whether to execute the task (currently unused).
     /// * `_browse` - Boolean flag indicating whether browsing capabilities are enabled (currently unused).
     /// * `_max_tries` - Maximum number of execution attempts (currently unused).
@@ -323,7 +338,7 @@ impl Executor for OptimizerGPT {
     /// - Updates the agent's status to `Completed` after successful execution.
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         _execute: bool,
         _browse: bool,
         _max_tries: u64,
@@ -332,7 +347,7 @@ impl Executor for OptimizerGPT {
             "{}",
             format!(
                 "[*] {:?}: Executing modularization task",
-                self.agent.position()
+                self.agent.persona()
             )
             .bright_white()
             .bold()
@@ -346,13 +361,13 @@ impl Executor for OptimizerGPT {
         };
         let original_code = fs::read_to_string(&file_path).await?;
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!("Analyzing and modularizing: {file_path}")),
         });
 
         #[cfg(feature = "mem")]
-        self.save_ltm(Communication {
+        self.save_ltm(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned("Original code sent for modularization".to_string()),
         })
@@ -378,13 +393,13 @@ impl Executor for OptimizerGPT {
 
             self.save_module(filename, &response).await?;
 
-            self.agent.add_communication(Communication {
+            self.agent.add_message(Message {
                 role: Cow::Borrowed("assistant"),
                 content: Cow::Owned(format!("Generated module: {filename}")),
             });
 
             #[cfg(feature = "mem")]
-            self.save_ltm(Communication {
+            self.save_ltm(Message {
                 role: Cow::Borrowed("assistant"),
                 content: Cow::Owned(format!("Saved file: {filename}")),
             })
@@ -403,10 +418,17 @@ impl Executor for OptimizerGPT {
             .join("\n");
         if !imports.is_empty() {
             fs::write(file_path.clone(), &imports).await?;
-            tasks.backend_code = Some(imports.clone().into());
+            task.backend_code = Some(imports.clone().into());
         }
         self.agent.update(Status::Completed);
 
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

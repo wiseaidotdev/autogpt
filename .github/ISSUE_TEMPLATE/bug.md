@@ -4,11 +4,11 @@ about: "[Bug \U0001F41B]: Create a bug report for AutoGPT."
 title: "[\U0001F41B Bug]: Bug Title."
 labels: needs triage
 assignees: wiseaidev
-
 ---
 
 **👶 Getting Started**
-Please [search the history](https://github.com/kevin-rs/autogpt/issues) to see if an issue already exists for the same problem.
+Please [search the history](https://github.com/wiseaidotdev/autogpt/issues) to see if an issue already exists for the same problem.
+
 - [ ] I have searched the existing issues.
 - [ ] I have tested the latest version.
 
@@ -20,6 +20,7 @@ Please provide a link to a live example and an unambiguous set of steps to repro
 
 Link to live example:
 Steps:
+
 1.
 2.
 3.

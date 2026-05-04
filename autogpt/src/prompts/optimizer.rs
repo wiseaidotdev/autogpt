@@ -1,3 +1,11 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+#![allow(dead_code)]
 pub(crate) const MODULARIZE_PROMPT: &str = r#"
 Your task is to refactor a monolithic source code file into a modular architecture.
 
@@ -37,3 +45,10 @@ Input:
   Filename: `utils/helpers.py`
   Full Project Code: <entire monolithic code>
 "#;
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
