@@ -1,6 +1,6 @@
 # RFC: IAC Protocol for Inter and Intra Agents Communications
 
-![iac-seq-diag](https://raw.githubusercontent.com/kevin-rs/autogpt/refs/heads/main/assets/iac.png)
+![iac-seq-diag](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/iac.png)
 
 ## Introduction
 
@@ -50,7 +50,6 @@ Every session begins by negotiating the transport stack:
 1. **Client** attempts QUIC handshake using native certificate trust roots.
 1. **Negotiation** includes compression preference (zstd) and dictionary ID.
 1. Upon failure or policy constraints, fallback can be:
-
    - **TLS/TCP** with full-stream multiplexing.
    - **UNIX socket/shared memory** used within colocated contexts.
 
@@ -119,7 +118,6 @@ Upon initial connection:
 
 1. QUIC handshake authenticates raw channel.
 1. Application-level handshake:
-
    - Exchange of agent IDs / public keys within secure stream.
    - Validation against orchestrator's registry or known set.
    - Compression dictionary selection.

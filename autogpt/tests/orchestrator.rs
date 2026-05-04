@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use autogpt::orchestrator::Orchestrator;
 use iac_rs::prelude::*;
 use tracing_subscriber::{filter, fmt, prelude::*, reload};
@@ -52,9 +59,15 @@ async fn test_orchestrator_create_and_terminate_agent() {
         ..Default::default()
     };
     client.send(terminate_msg).await.unwrap();
-
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let locked_agents = agents.lock().await;
     assert!(!locked_agents.contains_key("ArchitectGPT"));
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

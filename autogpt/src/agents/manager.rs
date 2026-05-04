@@ -1,4 +1,10 @@
 #![allow(unused)]
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
 
 //! # `ManagerGPT` agent.
 //!
@@ -13,7 +19,7 @@ use crate::agents::frontend::FrontendGPT;
 use crate::agents::git::GitGPT;
 use crate::agents::types::AgentType;
 use crate::common::utils::strip_code_blocks;
-use crate::common::utils::{ClientType, Communication, Task};
+use crate::common::utils::{ClientType, Message, Task};
 use crate::prompts::manager::{FRAMEWORK_MANAGER_PROMPT, LANGUAGE_MANAGER_PROMPT, MANAGER_PROMPT};
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Functions};
@@ -43,13 +49,19 @@ use anthropic_ai_sdk::types::message::{
 use gems::{
     chat::ChatBuilder,
     imagen::ImageGenBuilder,
-    messages::{Content, Message},
+    messages::{Content, Message as GemMessage},
     models::Model,
     stream::StreamBuilder,
     traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -64,8 +76,8 @@ use x_ai::{
 pub struct ManagerGPT {
     /// Represents the GPT agent associated with the manager.
     agent: AgentGPT,
-    /// Represents the tasks to be executed by the manager.
-    tasks: Task,
+    /// Represents the task to be executed by the manager.
+    task: Task,
     /// Represents the programming language used in the tasks.
     language: &'static str,
     /// Represents a collection of GPT agents managed by the manager.
@@ -79,7 +91,7 @@ impl ManagerGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - Objective description for ManagerGPT.
+    /// * `behavior` - behavior description for ManagerGPT.
     /// * `position` - Position description for ManagerGPT.
     /// * `request` - Description of the user's request.
     /// * `language` - Programming language used in the tasks.
@@ -90,25 +102,25 @@ impl ManagerGPT {
     ///
     /// # Business Logic
     ///
-    /// - Initializes the GPT agent with the given objective and position.
+    /// - Initializes the GPT agent with the given persona and behavior.
     /// - Initializes an empty collection of agents.
     /// - Initializes tasks with the provided description.
     /// - Initializes a Gemini client for interacting with Gemini API.
     ///
     pub fn new(
-        objective: &'static str,
-        position: &'static str,
+        persona: &'static str,
+        behavior: &'static str,
         request: &str,
         language: &'static str,
     ) -> Self {
-        let mut agent = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
 
         let agents: Vec<AgentType> = Vec::new();
 
         // let request = format!("{}\n\nUser Request: {}", MANAGER_PROMPT, request);
 
-        let tasks: Task = Task {
+        let task: Task = Task {
             description: request.to_string().into(),
             scope: None,
             urls: None,
@@ -119,7 +131,7 @@ impl ManagerGPT {
 
         info!(
             "{}",
-            format!("[*] {:?}: 🛠️  Getting ready!", agent.position(),)
+            format!("[*] {:?}: 🛠️  Getting ready!", agent.persona(),)
                 .bright_white()
                 .bold()
         );
@@ -128,7 +140,7 @@ impl ManagerGPT {
 
         Self {
             agent,
-            tasks,
+            task,
             language,
             agents,
             client,
@@ -152,31 +164,31 @@ impl ManagerGPT {
     async fn spawn_default_agents(&mut self) {
         self.add_agent(AgentType::Architect(
             ArchitectGPT::new(
-                "Creates innovative website designs and user experiences",
                 "ArchitectGPT",
+                "Creates innovative website designs and user experiences",
             )
             .await,
         ));
         #[cfg(feature = "img")]
         self.add_agent(AgentType::Designer(
             DesignerGPT::new(
-                "Creates innovative website designs and user experiences",
                 "DesignerGPT",
+                "Creates innovative website designs and user experiences",
             )
             .await,
         ));
         self.add_agent(AgentType::Backend(
             BackendGPT::new(
-                "Expertise lies in writing backend code for web servers and JSON databases",
                 "BackendGPT",
+                "Expertise lies in writing backend code for web servers and JSON databases",
                 self.language,
             )
             .await,
         ));
         self.add_agent(AgentType::Frontend(
             FrontendGPT::new(
-                "Expertise lies in writing frontend code for Yew rust framework",
                 "FrontendGPT",
+                "Expertise lies in writing frontend code for Yew rust framework",
                 self.language,
             )
             .await,
@@ -184,8 +196,8 @@ impl ManagerGPT {
         #[cfg(feature = "git")]
         self.add_agent(AgentType::Git(
             GitGPT::new(
-                "Handles git operations like staging and committing code",
                 "GitGPT",
+                "Handles git operations like staging and committing code",
             )
             .await,
         ));
@@ -203,7 +215,7 @@ impl ManagerGPT {
             #[cfg(feature = "gem")]
             ClientType::Gemini(gem_client) if provider == "gemini" => {
                 let parameters = ChatBuilder::default()
-                    .messages(vec![Message::User {
+                    .messages(vec![GemMessage::User {
                         content: Content::Text(prompt),
                         name: None,
                     }])
@@ -214,7 +226,7 @@ impl ManagerGPT {
                     Ok(response) => strip_code_blocks(&response),
                     Err(_err) => {
                         let error_msg = "Failed to generate content via Gemini API.".to_string();
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         });
@@ -222,7 +234,7 @@ impl ManagerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("system"),
                                     content: Cow::Owned(error_msg.clone()),
                                 })
@@ -271,7 +283,7 @@ impl ManagerGPT {
 
                     Err(_err) => {
                         let error_msg = "Failed to generate content via OpenAI API.".to_string();
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         });
@@ -279,7 +291,7 @@ impl ManagerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("system"),
                                     content: Cow::Owned(error_msg.clone()),
                                 })
@@ -317,7 +329,7 @@ impl ManagerGPT {
 
                     Err(_) => {
                         let error_msg = "Failed to generate content via Claude API.".to_string();
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("system"),
                             content: Cow::Owned(error_msg.clone()),
                         });
@@ -325,7 +337,7 @@ impl ManagerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("system"),
                                     content: Cow::Owned(error_msg.clone()),
                                 })
@@ -358,7 +370,7 @@ impl ManagerGPT {
                     Ok(chat) => {
                         let response_text = chat.choices[0].message.content.clone();
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(response_text.clone()),
                         });
@@ -366,7 +378,7 @@ impl ManagerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(response_text.clone()),
                                 })
@@ -376,7 +388,7 @@ impl ManagerGPT {
                         #[cfg(debug_assertions)]
                         debug!(
                             "[*] {:?}: Got XAI Output: {:?}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             response_text
                         );
 
@@ -386,7 +398,7 @@ impl ManagerGPT {
                     Err(err) => {
                         let err_msg = format!("Failed to generate content via XAI API: {err}");
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(err_msg.clone()),
                         });
@@ -394,7 +406,7 @@ impl ManagerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(err_msg.clone()),
                                 })
@@ -406,10 +418,39 @@ impl ManagerGPT {
                 }
             }
 
+            #[cfg(feature = "co")]
+            ClientType::Cohere(co_client) => {
+                use cohere_rust::api::GenerateModel;
+                use cohere_rust::api::generate::GenerateRequest;
+
+                let gen_request = GenerateRequest {
+                    prompt: &prompt,
+                    model: Some(GenerateModel::Custom("command-a-03-2025".to_string())),
+                    max_tokens: Some(2048),
+                    ..Default::default()
+                };
+
+                match co_client.generate(&gen_request).await {
+                    Ok(generations) => generations
+                        .iter()
+                        .map(|g| g.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    Err(e) => {
+                        let err_msg = format!("Failed to generate content via Cohere API: {e:?}");
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("system"),
+                            content: Cow::Owned(err_msg.clone()),
+                        });
+                        return Err(anyhow!(err_msg));
+                    }
+                }
+            }
+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(anyhow!(
-                    "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                    "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                 ));
             }
         };
@@ -438,22 +479,22 @@ impl ManagerGPT {
     /// - Logs user request, system decisions, and assistant responses.
     /// - Manages retries and error handling during task execution.
     pub async fn execute(&mut self, execute: bool, browse: bool, max_tries: u64) -> Result<()> {
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
                 "Execute tasks with description: '{}'",
-                self.tasks.description.clone()
+                self.task.description.clone()
             )),
         });
 
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(format!(
                         "Execute tasks with description: '{}'",
-                        self.tasks.description.clone()
+                        self.task.description.clone()
                     )),
                 })
                 .await;
@@ -462,8 +503,8 @@ impl ManagerGPT {
             "{}",
             format!(
                 "[*] {:?}: Executing task: {:?}",
-                self.agent.position(),
-                self.tasks.description.clone()
+                self.agent.persona(),
+                self.task.description.clone()
             )
             .bright_white()
             .bold()
@@ -472,16 +513,16 @@ impl ManagerGPT {
         let language_request = format!(
             "{}\n\nUser Request: {}",
             LANGUAGE_MANAGER_PROMPT,
-            self.tasks.description.clone()
+            self.task.description.clone()
         );
 
         let framework_request = format!(
             "{}\n\nUser Request: {}",
             FRAMEWORK_MANAGER_PROMPT,
-            self.tasks.description.clone()
+            self.task.description.clone()
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(
                 "Analyzing user request to determine programming language and framework..."
@@ -492,7 +533,7 @@ impl ManagerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(
                         "Analyzing user request to determine programming language and framework..."
@@ -504,7 +545,7 @@ impl ManagerGPT {
         let language = self.execute_prompt(language_request).await?;
         let framework = self.execute_prompt(framework_request).await?;
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(format!(
                 "Identified Language: '{language}', Framework: '{framework}'"
@@ -514,7 +555,7 @@ impl ManagerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(format!(
                         "Identified Language: '{language}', Framework: '{framework}'"
@@ -524,7 +565,7 @@ impl ManagerGPT {
         }
         if self.agents.is_empty() {
             self.spawn_default_agents().await;
-            self.agent.add_communication(Communication {
+            self.agent.add_message(Message {
                 role: Cow::Borrowed("system"),
                 content: Cow::Borrowed("No agents were available. Spawned default agents."),
             });
@@ -533,7 +574,7 @@ impl ManagerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("system"),
                     content: Cow::Borrowed("No agents were available. Spawned default agents."),
                 })
@@ -544,19 +585,19 @@ impl ManagerGPT {
             let request_prompt = format!(
                 "{}\n\n\n\nUser Request: {}\n\nAgent Role: {}\nProgramming Language: {}\nFramework: {}\n",
                 MANAGER_PROMPT,
-                self.tasks.description.clone(),
-                agent.position(),
+                self.task.description.clone(),
+                agent.persona(),
                 language,
                 framework
             );
 
             let refined_task = self.execute_prompt(request_prompt).await?;
 
-            self.agent.add_communication(Communication {
+            self.agent.add_message(Message {
                 role: Cow::Borrowed("assistant"),
                 content: Cow::Owned(format!(
                     "Refined task for '{}': {}",
-                    agent.position(),
+                    agent.persona(),
                     refined_task
                 )),
             });
@@ -564,18 +605,18 @@ impl ManagerGPT {
             #[cfg(feature = "mem")]
             {
                 let _ = self
-                    .save_ltm(Communication {
+                    .save_ltm(Message {
                         role: Cow::Borrowed("assistant"),
                         content: Cow::Owned(format!(
                             "Refined task for '{}': {}",
-                            agent.position(),
+                            agent.persona(),
                             refined_task
                         )),
                     })
                     .await;
             }
 
-            self.tasks = Task {
+            self.task = Task {
                 description: refined_task.into(),
                 scope: None,
                 urls: None,
@@ -585,11 +626,11 @@ impl ManagerGPT {
             };
 
             let _agent_res = agent
-                .execute(&mut self.tasks, execute, browse, max_tries)
+                .execute(&mut self.task, execute, browse, max_tries)
                 .await;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Borrowed("Task execution completed by all agents."),
         });
@@ -597,7 +638,7 @@ impl ManagerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Borrowed("Task execution completed by all agents."),
                 })
@@ -605,62 +646,69 @@ impl ManagerGPT {
         }
         info!(
             "{}",
-            format!("[*] {:?}: Completed Task:", self.agent.position())
+            format!("[*] {:?}: Completed Task:", self.agent.persona())
                 .bright_white()
                 .bold()
         );
 
         Ok(())
     }
-    /// Saves a communication to long-term memory for the agent.
+    /// Saves a message to long-term memory for the agent.
     ///
     /// # Arguments
     ///
-    /// * `communication` - The communication to save, which contains the role and content.
+    /// * `message` - The message to save, which contains the role and content.
     ///
     /// # Returns
     ///
-    /// (`Result<()>`): Result indicating the success or failure of saving the communication.
+    /// (`Result<()>`): Result indicating the success or failure of saving the message.
     ///
     /// # Business Logic
     ///
-    /// - This method uses the `save_long_term_memory` util function to save the communication into the agent's long-term memory.
-    /// - The communication is embedded and stored using the agent's unique ID as the namespace.
-    /// - It handles the embedding and metadata for the communication, ensuring it's stored correctly.
+    /// - This method uses the `save_long_term_memory` util function to save the message into the agent's long-term memory.
+    /// - The message is embedded and stored using the agent's unique ID as the namespace.
+    /// - It handles the embedding and metadata for the message, ensuring it's stored correctly.
     #[cfg(feature = "mem")]
-    async fn save_ltm(&mut self, communication: Communication) -> Result<()> {
-        save_long_term_memory(&mut self.client, self.agent.id.clone(), communication).await
+    async fn save_ltm(&mut self, message: Message) -> Result<()> {
+        save_long_term_memory(&mut self.client, self.agent.id.clone(), message).await
     }
 
-    /// Retrieves all communications stored in the agent's long-term memory.
+    /// Retrieves all messages stored in the agent's long-term memory.
     ///
     /// # Returns
     ///
-    /// (`Result<Vec<Communication>>`): A result containing a vector of communications retrieved from the agent's long-term memory.
+    /// (`Result<Vec<Message>>`): A result containing a vector of messages retrieved from the agent's long-term memory.
     ///
     /// # Business Logic
     ///
-    /// - This method fetches the stored communications for the agent by interacting with the `load_long_term_memory` function.
-    /// - The function will return a list of communications that are indexed by the agent's unique ID.
-    /// - It handles the retrieval of the stored metadata and content for each communication.
+    /// - This method fetches the stored messages for the agent by interacting with the `load_long_term_memory` function.
+    /// - The function will return a list of messages that are indexed by the agent's unique ID.
+    /// - It handles the retrieval of the stored metadata and content for each message.
     #[cfg(feature = "mem")]
-    async fn get_ltm(&self) -> Result<Vec<Communication>> {
+    async fn get_ltm(&self) -> Result<Vec<Message>> {
         load_long_term_memory(self.agent.id.clone()).await
     }
 
-    /// Retrieves the concatenated context of all communications in the agent's long-term memory.
+    /// Retrieves the concatenated context of all messages in the agent's long-term memory.
     ///
     /// # Returns
     ///
-    /// (`String`): A string containing the concatenated role and content of all communications stored in the agent's long-term memory.
+    /// (`String`): A string containing the concatenated role and content of all messages stored in the agent's long-term memory.
     ///
     /// # Business Logic
     ///
     /// - This method calls the `long_term_memory_context` function to generate a string representation of the agent's entire long-term memory.
-    /// - The context string is composed of each communication's role and content, joined by new lines.
+    /// - The context string is composed of each message's role and content, joined by new lines.
     /// - It provides a quick overview of the agent's memory in a human-readable format.
     #[cfg(feature = "mem")]
     async fn ltm_context(&self) -> String {
         long_term_memory_context(self.agent.id.clone()).await
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

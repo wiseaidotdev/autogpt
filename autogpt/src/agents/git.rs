@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use anyhow::{Context, Result, anyhow};
 use colored::*;
 use git2::{IndexAddOption, Repository, Signature};
@@ -10,7 +17,7 @@ use crate::agents::agent::AgentGPT;
 #[cfg(feature = "net")]
 use crate::collaboration::Collaborator;
 use crate::common::utils::{
-    Capability, ClientType, Communication, ContextManager, Knowledge, Persona, Planner, Reflection,
+    Capability, ClientType, ContextManager, Knowledge, Message, Persona, Planner, Reflection,
     Status, Task, TaskScheduler, Tool,
 };
 use crate::traits::agent::Agent;
@@ -31,15 +38,17 @@ use {openai_dive::v1::models::FlagshipModel, openai_dive::v1::resources::chat::*
 
 #[cfg(feature = "gem")]
 use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
-    messages::{Content, Message},
-    models::Model,
-    stream::StreamBuilder,
-    traits::CTrait,
+    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
+    stream::StreamBuilder, traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -60,7 +69,7 @@ use anthropic_ai_sdk::types::message::{
 pub struct GitGPT {
     /// Path to the working directory used by the Git repository.
     workspace: Cow<'static, str>,
-    /// GPT-based agent handling task status and communication.
+    /// GPT-based agent handling task status and messages.
     agent: AgentGPT,
     /// Represents an OpenAI or Gemini client for interacting with their API.
     client: ClientType,
@@ -129,19 +138,17 @@ impl GitGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - The goal or mission for the agent.
-    /// * `position` - The role or identity of the agent.
+    /// * `persona` - The role or identity of the agent.
+    /// * `behavior` - The goal or mission for the agent.
     ///
     /// # Returns
     ///
     /// (`GitGPT`): A new GitGPT instance with initialized workspace, agent, and Git repository.
     ///
-    /// # Business Logic
-    ///
     /// - Sets up the Git workspace directory.
     /// - Initializes or opens a Git repository.
-    /// - Creates a GPT agent with the provided objective and position.
-    pub async fn new(objective: &'static str, position: &'static str) -> Self {
+    /// - Creates a GPT agent with the provided persona and behavior.
+    pub async fn new(persona: &'static str, behavior: &'static str) -> Self {
         let workspace = var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace/".to_string());
 
         if !fs::try_exists(&workspace).await.unwrap_or(false) {
@@ -153,8 +160,8 @@ impl GitGPT {
             debug!("Workspace directory '{}' already exists.", workspace);
         }
 
-        let mut agent = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
 
         let repo = if fs::try_exists(format!("{}/.git", &workspace))
             .await
@@ -168,7 +175,7 @@ impl GitGPT {
 
         info!(
             "{}",
-            format!("[*] {:?}: GitGPT initialized.", agent.position())
+            format!("[*] {:?}: GitGPT initialized.", agent.persona())
         );
 
         Self {
@@ -180,7 +187,7 @@ impl GitGPT {
         }
     }
 
-    /// Generates a Git author signature from the agent's position.
+    /// Generates a Git author signature from the agent's persona.
     ///
     /// # Returns
     ///
@@ -190,8 +197,8 @@ impl GitGPT {
     ///
     /// Panics if signature creation fails.
     fn author_signature(&self) -> Signature<'_> {
-        let name = self.agent.position().to_string();
-        let email = format!("{}@kevin-rs.dev", name.to_lowercase().replace(" ", "_"));
+        let name = self.agent.persona().to_string();
+        let email = format!("{}@wiseai.dev", name.to_lowercase().replace(" ", "_"));
         Signature::now(&name, &email).expect("Failed to create signature")
     }
 
@@ -250,7 +257,7 @@ impl GitGPT {
             "{}",
             format!(
                 "[*] {:?}: Commit created: {}",
-                self.agent.position(),
+                self.agent.persona(),
                 commit_oid
             )
             .bright_blue()
@@ -270,7 +277,7 @@ impl Executor for GitGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to task descriptions and metadata.
+    /// * `task` - A mutable reference to the task description and metadata.
     /// * `_execute` - Flag to indicate execution logic (unused).
     /// * `_max_tries` - Maximum retries for execution (unused).
     ///
@@ -289,22 +296,19 @@ impl Executor for GitGPT {
     /// - Updates agent status to completed after successful commit.
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         _execute: bool,
         _browse: bool,
         _max_tries: u64,
     ) -> Result<()> {
         info!(
             "{}",
-            format!(
-                "[*] {:?}: Executing Git commit task.",
-                self.agent.position()
-            )
-            .bright_white()
-            .bold()
+            format!("[*] {:?}: Executing Git commit task.", self.agent.persona())
+                .bright_white()
+                .bold()
         );
 
-        for task in tasks.description.clone().split("- ") {
+        for task in task.description.clone().split("- ") {
             if !task.trim().is_empty() {
                 info!("{} {}", "•".bright_white().bold(), task.trim().cyan());
             }
@@ -318,7 +322,7 @@ impl Executor for GitGPT {
                     .await
                     .context("Staging files with git2 failed")?;
 
-                self.commit_changes(&tasks.description)
+                self.commit_changes(&task.description)
                     .await
                     .context("Git commit failed")?;
 
@@ -327,7 +331,7 @@ impl Executor for GitGPT {
             _ => {
                 debug!(
                     "[*] {:?}: GitGPT status is not Idle. Skipping commit.",
-                    self.agent.position()
+                    self.agent.persona()
                 );
             }
         }
@@ -335,3 +339,10 @@ impl Executor for GitGPT {
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

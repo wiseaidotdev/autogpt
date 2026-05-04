@@ -1,6 +1,6 @@
 ### 1. 🎩 ManagerGPT
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/fc7fb72b-6f45-4c35-99ff-5c0f8e7d54cf" align="left" alt="manager" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/fc7fb72b-6f45-4c35-99ff-5c0f8e7d54cf" align="left" alt="manager" width="64" />
 
 ManagerGPT serves as the orchestrator of your project, directing the other agents to execute tasks based on your input. When you provide a project prompt, ManagerGPT divides it into tasks for BackendGPT, FrontendGPT, DesignerGPT, and ArchitectGPT.
 
@@ -48,7 +48,7 @@ Finally, ManagerGPT aggregates the outcomes from all GPTs, consolidating the gen
 
 ### 2. 👷‍♀️ ArchitectGPT
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/91a4868a-093f-4c96-89fc-5447e6f904f1" align="left" alt="architect" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/91a4868a-093f-4c96-89fc-5447e6f904f1" align="left" alt="architect" width="64" />
 
 ArchitectGPT is responsible for designing the overall structure and architecture of your application. ArchitectGPT will create the foundation upon which your app will be built.
 
@@ -59,11 +59,11 @@ Upon receiving instructions from ManagerGPT, ArchitectGPT will:
 - Determine the technologies and frameworks needed to realize the project goals and arcitecture of the project using the [diagrams](https://github.com/mingrammer/diagrams) library.
 - Design the data flow and communication between backend and frontend components to ensure seamless operation.
 
-![weather_forecast_website_diagram](https://github.com/kevin-rs/kevin/assets/62179149/d94b852c-30d4-4699-a7b1-b8cc225d9bd3)
+![weather_forecast_website_diagram](https://github.com/wiseaidotdev/autogpt/assets/62179149/d94b852c-30d4-4699-a7b1-b8cc225d9bd3)
 
 ### 3. 🎨 DesignerGPT (Optional) Feature Flag: `img`
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/8f7ec0bd-392c-4263-a700-b3012d395479" align="left" alt="designer" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/8f7ec0bd-392c-4263-a700-b3012d395479" align="left" alt="designer" width="64" />
 
 DesignerGPT transforms ideas into visually stunning designs. Whether it's crafting sleek user interfaces or designing captivating user experiences, DesignerGPT brings your project to life with style.
 
@@ -75,11 +75,11 @@ When tasked by ManagerGPT, DesignerGPT will:
 - Select colors, fonts, and layouts that align with your project's branding and aesthetic.
 - TODO: Collaborate with other agents to integrate design elements seamlessly into the final product.
 
-![DesignerGPT sample output](https://github.com/kevin-rs/kevin/assets/62179149/356cec29-e779-4f95-81d8-498ef07c1f3a)
+![DesignerGPT sample output](https://github.com/wiseaidotdev/autogpt/assets/62179149/356cec29-e779-4f95-81d8-498ef07c1f3a)
 
 ### 4. ⚙️ BackendGPT
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/74819200-83d5-498a-9a43-658096145611" align="left" alt="backend" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/74819200-83d5-498a-9a43-658096145611" align="left" alt="backend" width="64" />
 
 BackendGPT handles all things related to server-side logic and data processing. From database management to API integration, BackendGPT ensures that your application's backend is robust and efficient.
 
@@ -93,11 +93,11 @@ Upon receiving instructions from ManagerGPT, BackendGPT will:
 - Integrate external APIs or services to fetch real-time weather information.
 - Ensure data security and integrity, implementing authentication and authorization mechanisms as needed.
 
-![BackendGPT code](https://github.com/kevin-rs/kevin/assets/62179149/a9ec06e0-74be-4c0e-8e3a-751eb0389c90)
+![BackendGPT code](https://github.com/wiseaidotdev/autogpt/assets/62179149/a9ec06e0-74be-4c0e-8e3a-751eb0389c90)
 
 ### 5. 🖥️ FrontendGPT
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/684da3ce-f36c-4e2e-a315-0a834ba39539" align="left" alt="frontend" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/684da3ce-f36c-4e2e-a315-0a834ba39539" align="left" alt="frontend" width="64" />
 
 FrontendGPT will craft engaging and interactive experiences for your application's users. With a keen eye for design and a knack for coding, FrontendGPT brings your designs to life in the browser.
 
@@ -111,7 +111,7 @@ When prompted by ManagerGPT, FrontendGPT will:
 
 ### 6. 💌 MailerGPT (Optional) Feature Flag: `mail`
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/fedaf721-20b4-43e6-bdb9-ef3f87430ec3" align="left" alt="mailer" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/fedaf721-20b4-43e6-bdb9-ef3f87430ec3" align="left" alt="mailer" width="64" />
 
 MailerGPT streamlines your communication processes by automating the creation and distribution of emails.
 
@@ -124,7 +124,7 @@ MailerGPT operates by:
 
 ### 7. 📝 GitGPT
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/91a4868a-093f-4c96-89fc-5447e6f904f1" align="left" alt="gitgpt" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/91a4868a-093f-4c96-89fc-5447e6f904f1" align="left" alt="gitgpt" width="64" />
 
 GitGPT is responsible for managing version control tasks inside your workspace. It stages and commits files automatically based on task descriptions, turning completed agents actions into traceable, atomic Git commits.
 
@@ -144,7 +144,7 @@ This makes GitGPT perfect for keeping a clean Git history without manual interve
 > **Example Commit Message**
 >
 > commit cc448377fae752ba28847c873751ba1170d19fc0 (HEAD -> master)
-> Author: GitGPT <gitgpt@kevin-rs.dev>
+> Author: GitGPT <gitgpt@wiseai.dev>
 > Date: Mon Apr 7 00:25:59 2025 +0300
 >
 >     User Request: Project Goal: "Develop a patient management system encompassing appointment scheduling, patient records, and billing features.", Agent Role: "frontend", programming language: "Python", framework: "FastAPI"
@@ -156,7 +156,7 @@ This makes GitGPT perfect for keeping a clean Git history without manual interve
 
 ### 8. 🧠 OptimizerGPT
 
-<img src="https://github.com/kevin-rs/kevin/assets/62179149/91a4868a-093f-4c96-89fc-5447e6f904f1" align="left" alt="optimizer" width="64" />
+<img src="https://github.com/wiseaidotdev/autogpt/assets/62179149/91a4868a-093f-4c96-89fc-5447e6f904f1" align="left" alt="optimizer" width="64" />
 
 OptimizerGPT takes messy or monolithic frontend and backend code files and intelligently restructures them into clean, modular components. It improves maintainability, readability, and performance by automatically applying best practices in code organization.
 

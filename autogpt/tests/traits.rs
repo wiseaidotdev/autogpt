@@ -1,18 +1,25 @@
-use autogpt::common::utils::{Communication, Status};
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+use autogpt::common::utils::{Message, Status};
 use autogpt::prelude::*;
 use autogpt::traits::agent::Agent;
 use std::borrow::Cow;
 
 #[derive(Debug, Default)]
 pub struct MockAgent {
-    objective: Cow<'static, str>,
-    position: Cow<'static, str>,
+    behavior: Cow<'static, str>,
+    persona: Cow<'static, str>,
     status: Status,
-    memory: Vec<Communication>,
+    memory: Vec<Message>,
     tools: Vec<Tool>,
     knowledge: Knowledge,
     planner: Option<Planner>,
-    persona: Persona,
+    profile: Persona,
     collaborators: Vec<Collaborator>,
     reflection: Option<Reflection>,
     scheduler: Option<TaskScheduler>,
@@ -23,36 +30,33 @@ pub struct MockAgent {
 
 impl Agent for MockAgent {
     fn new(
-        objective: std::borrow::Cow<'static, str>,
-        position: std::borrow::Cow<'static, str>,
+        persona: std::borrow::Cow<'static, str>,
+        behavior: std::borrow::Cow<'static, str>,
     ) -> Self {
-        let mut agent = MockAgent {
-            objective: objective.clone(),
-            position: position.clone(),
+        MockAgent {
+            behavior,
+            persona,
             ..Default::default()
-        };
-        agent.objective = objective;
-        agent.position = position;
-        agent
+        }
     }
 
     fn update(&mut self, status: Status) {
         self.status = status;
     }
 
-    fn objective(&self) -> &std::borrow::Cow<'static, str> {
-        &self.objective
+    fn behavior(&self) -> &std::borrow::Cow<'static, str> {
+        &self.behavior
     }
 
-    fn position(&self) -> &std::borrow::Cow<'static, str> {
-        &self.position
+    fn persona(&self) -> &std::borrow::Cow<'static, str> {
+        &self.persona
     }
 
     fn status(&self) -> &Status {
         &self.status
     }
 
-    fn memory(&self) -> &Vec<Communication> {
+    fn memory(&self) -> &Vec<Message> {
         &self.memory
     }
 
@@ -68,8 +72,8 @@ impl Agent for MockAgent {
         self.planner.as_ref()
     }
 
-    fn persona(&self) -> &Persona {
-        &self.persona
+    fn profile(&self) -> &Persona {
+        &self.profile
     }
 
     fn collaborators(&self) -> Vec<Collaborator> {
@@ -96,7 +100,7 @@ impl Agent for MockAgent {
         &self.tasks
     }
 
-    fn memory_mut(&mut self) -> &mut Vec<Communication> {
+    fn memory_mut(&mut self) -> &mut Vec<Message> {
         &mut self.memory
     }
 
@@ -111,19 +115,19 @@ impl Agent for MockAgent {
 
 #[test]
 fn test_agent_creation() {
-    let objective = Cow::Borrowed("Objective");
-    let position = Cow::Borrowed("Position");
-    let agent = MockAgent::new(objective.clone(), position.clone());
+    let persona = Cow::Borrowed("Persona");
+    let behavior = Cow::Borrowed("Behavior");
+    let agent = MockAgent::new(persona.clone(), behavior.clone());
 
-    assert_eq!(*agent.objective(), *objective);
-    assert_eq!(*agent.position(), *position);
+    assert_eq!(*agent.behavior(), *behavior);
+    assert_eq!(*agent.persona(), *persona);
     assert_eq!(*agent.status(), Status::Idle);
     assert!(agent.memory().is_empty());
 }
 
 #[test]
 fn test_agent_update() {
-    let mut agent = MockAgent::new(Cow::Borrowed("Objective"), Cow::Borrowed("Position"));
+    let mut agent = MockAgent::new(Cow::Borrowed("Persona"), Cow::Borrowed("Behavior"));
 
     agent.update(Status::Active);
     assert_eq!(*agent.status(), Status::Active);
@@ -131,3 +135,10 @@ fn test_agent_update() {
     agent.update(Status::InUnitTesting);
     assert_eq!(*agent.status(), Status::InUnitTesting);
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

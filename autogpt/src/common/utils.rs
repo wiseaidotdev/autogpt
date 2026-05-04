@@ -1,10 +1,17 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # Utils module.
 //!
 //! This module provides various utility functions and common structures that can be used across different parts of the project.
 //!
 //! ## Structures
 //!
-//! - `Communication`: Represents a communication messages between agents.
+//! - `Message`: Represents a message between agents.
 //! - `Status`: Represents the status of an agent.
 //! - `Route`: Represents a route object.
 //! - `Scope`: Represents the scope of a project.
@@ -20,9 +27,9 @@
 //! # Examples
 //!
 //! ```
-//! use autogpt::common::utils::{Communication, Status, Route, Scope, Task, extract_json_string, extract_array, similarity, strip_code_blocks};
+//! use autogpt::common::utils::{Message, Status, Route, Scope, Task, extract_json_string, extract_array, similarity, strip_code_blocks};
 //!
-//! let communication = Communication {
+//! let message = Message {
 //!     role: "Sender".into(),
 //!     content: "Hello, how are you?".into(),
 //! };
@@ -43,10 +50,10 @@
 //!     external: false,
 //! };
 //!
-//! let tasks = Task {
+//! let task = Task {
 //!     description: "This is a task description.".into(),
 //!     scope: Some(scope),
-//!     urls: Some(vec!["https://kevin-rs.dev".into()]),
+//!     urls: Some(vec!["https://wiseai.dev".into()]),
 //!     frontend_code: None,
 //!     backend_code: None,
 //!     api_schema: None,
@@ -121,6 +128,28 @@ use std::collections::HashMap;
 #[cfg(feature = "xai")]
 use x_ai::{chat_compl::Message as XaiMessage, client::XaiClient, traits::ClientConfig};
 
+#[cfg(feature = "co")]
+use cohere_rust::Cohere;
+
+#[cfg(feature = "co")]
+#[derive(Clone)]
+pub struct CohereClient(pub std::sync::Arc<Cohere>);
+
+#[cfg(feature = "co")]
+impl std::fmt::Debug for CohereClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CohereClient")
+    }
+}
+
+#[cfg(feature = "co")]
+impl std::ops::Deref for CohereClient {
+    type Target = Cohere;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 use derivative::Derivative;
 #[cfg(feature = "cli")]
 use std::time::Duration;
@@ -143,6 +172,10 @@ pub enum ClientType {
     /// XAI Grok client.
     #[cfg(feature = "xai")]
     Xai(XaiClient),
+
+    /// Cohere client.
+    #[cfg(feature = "co")]
+    Cohere(CohereClient),
 }
 
 impl Default for ClientType {
@@ -155,6 +188,12 @@ impl ClientType {
     pub fn from_env() -> Self {
         let provider = var("AI_PROVIDER").unwrap_or_else(|_| "gemini".to_string());
 
+        #[cfg(feature = "co")]
+        if provider == "cohere" {
+            let client = CohereClient(std::sync::Arc::new(Cohere::default()));
+            return ClientType::Cohere(client);
+        }
+
         #[cfg(feature = "oai")]
         if provider == "openai" {
             let openai_client = OpenAIClient::new_from_env();
@@ -162,7 +201,7 @@ impl ClientType {
         }
 
         #[cfg(feature = "gem")]
-        if provider == "gemini" || cfg!(not(feature = "oai")) {
+        if provider == "gemini" {
             let model = var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
             let api_key = var("GEMINI_API_KEY").unwrap_or_default();
             let gemini_client = GeminiClient::builder().model(&model).build().unwrap();
@@ -193,18 +232,18 @@ impl ClientType {
         {
             panic!(
                 "Invalid AI_PROVIDER `{provider}` or missing required feature flags. \
-                Make sure to enable at least one of: `oai`, `gem`, `cld`, `xai`."
+                Make sure to enable at least one of: `co`, `gem`, `oai`, `cld`, `xai`."
             );
         }
     }
 }
 
-/// Represents a communication between agents.
+/// Represents a message between agents.
 #[derive(Eq, Debug, PartialEq, Default, Clone, Hash, Serialize, Deserialize)]
-pub struct Communication {
-    /// The role of the communication.
+pub struct Message {
+    /// The role of the message.
     pub role: Cow<'static, str>,
-    /// The content of the communication.
+    /// The content of the message.
     pub content: Cow<'static, str>,
 }
 
@@ -341,8 +380,8 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
         item[0] = i;
     }
 
-    for j in 0..=len2 {
-        matrix[0][j] = j;
+    for (j, item) in matrix[0].iter_mut().enumerate() {
+        *item = j;
     }
 
     for (i, char1) in s1.chars().enumerate() {
@@ -599,6 +638,10 @@ pub async fn ask_to_run_command(
 /// Enum representing supported GPT models.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Model {
+    /// Cohere model.
+    #[cfg(feature = "co")]
+    Cohere(String),
+
     /// OpenAI model.
     #[cfg(feature = "oai")]
     OpenAI(FlagshipModel),
@@ -618,40 +661,58 @@ pub enum Model {
 
 impl Default for Model {
     fn default() -> Self {
-        #[cfg(feature = "oai")]
+        #[cfg(feature = "gem")]
         {
-            Model::OpenAI(FlagshipModel::Gpt4O)
+            Model::Gemini(GeminiModel::Flash3Preview)
         }
 
-        #[cfg(all(not(feature = "oai"), feature = "cld"))]
+        #[cfg(all(not(feature = "gem"), feature = "co"))]
+        {
+            return Model::Cohere("command-a-03-2025".to_string());
+        }
+
+        #[cfg(all(not(any(feature = "gem", feature = "co")), feature = "oai"))]
+        {
+            return Model::OpenAI(FlagshipModel::Gpt4O);
+        }
+
+        #[cfg(all(
+            not(any(feature = "gem", feature = "co", feature = "oai")),
+            feature = "cld"
+        ))]
         {
             return Model::Claude("claude-3-7-sonnet-latest".to_string());
         }
 
-        #[cfg(all(not(any(feature = "oai", feature = "cld")), feature = "gem"))]
-        {
-            return Model::Gemini(GeminiModel::Flash20);
-        }
-
         #[cfg(all(
-            not(any(feature = "oai", feature = "cld", feature = "gem")),
+            not(any(feature = "gem", feature = "co", feature = "oai", feature = "cld")),
             feature = "xai"
         ))]
         {
             return Model::Xai("grok-beta".to_string());
         }
 
-        #[cfg(not(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai")))]
+        #[cfg(not(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        )))]
         {
             panic!(
-                "At least one of the features `oai`, `gem`, `cld`, or `xai` must be enabled for Model::default()"
+                "At least one of the features `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for Model::default()"
             );
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum ProviderMessage {
+    /// Cohere message type (plain text prompt).
+    #[cfg(feature = "co")]
+    Cohere(String),
+
     /// OpenAI message type.
     #[cfg(feature = "oai")]
     OpenAI(ChatMessage),
@@ -669,87 +730,115 @@ pub enum Message {
     Xai(XaiMessage),
 }
 
-impl Default for Message {
+impl Default for ProviderMessage {
     fn default() -> Self {
-        #[cfg(feature = "oai")]
+        #[cfg(feature = "co")]
         {
-            Message::OpenAI(ChatMessage::User {
+            ProviderMessage::Cohere("Hello".to_string())
+        }
+
+        #[cfg(all(not(feature = "co"), feature = "oai"))]
+        {
+            return ProviderMessage::OpenAI(ChatMessage::User {
                 content: ChatMessageContent::Text("Hello".into()),
-                name: None,
-            })
-        }
-
-        #[cfg(all(not(feature = "oai"), feature = "cld"))]
-        {
-            return Message::Claude(AnthMessage::new_text(Role::User, "Hello"));
-        }
-
-        #[cfg(all(not(any(feature = "oai", feature = "cld")), feature = "gem"))]
-        {
-            return Message::Gemini(GeminiMessage::User {
-                content: Content::Text("Hello".into()),
                 name: None,
             });
         }
 
+        #[cfg(all(not(any(feature = "co", feature = "oai")), feature = "cld"))]
+        {
+            return ProviderMessage::Claude(AnthMessage::new_text(Role::User, "Hello"));
+        }
+
         #[cfg(all(
-            not(any(feature = "oai", feature = "cld", feature = "gem")),
+            not(any(feature = "co", feature = "oai", feature = "cld")),
+            feature = "gem"
+        ))]
+        {
+            ProviderMessage::Gemini(GeminiMessage::User {
+                content: Content::Text("Hello".into()),
+                name: None,
+            })
+        }
+
+        #[cfg(all(
+            not(any(feature = "co", feature = "oai", feature = "cld", feature = "gem")),
             feature = "xai"
         ))]
         {
-            return Message::Xai(XaiMessage {
+            return ProviderMessage::Xai(XaiMessage {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
             });
         }
 
-        #[cfg(not(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai")))]
+        #[cfg(not(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        )))]
         {
             panic!(
-                "At least one of the features `oai`, `gem`, `cld`, or `xai` must be enabled for Message::default()"
+                "At least one of the features `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for ProviderMessage::default()"
             );
         }
     }
 }
 
-impl Message {
+impl ProviderMessage {
     pub fn from_text(_text: impl Into<String>) -> Self {
-        #[cfg(feature = "oai")]
+        #[cfg(feature = "co")]
         {
-            Message::OpenAI(ChatMessage::User {
+            ProviderMessage::Cohere(_text.into())
+        }
+
+        #[cfg(all(not(feature = "co"), feature = "oai"))]
+        {
+            return ProviderMessage::OpenAI(ChatMessage::User {
                 content: ChatMessageContent::Text(_text.into()),
-                name: None,
-            })
-        }
-
-        #[cfg(all(not(feature = "oai"), feature = "cld"))]
-        {
-            return Message::Claude(AnthMessage::new_text(Role::User, _text.into()));
-        }
-
-        #[cfg(all(not(any(feature = "oai", feature = "cld")), feature = "gem"))]
-        {
-            return Message::Gemini(GeminiMessage::User {
-                content: Content::Text(_text.into()),
                 name: None,
             });
         }
 
+        #[cfg(all(not(any(feature = "co", feature = "oai")), feature = "cld"))]
+        {
+            return ProviderMessage::Claude(AnthMessage::new_text(Role::User, _text.into()));
+        }
+
         #[cfg(all(
-            not(any(feature = "oai", feature = "cld", feature = "gem")),
+            not(any(feature = "co", feature = "oai", feature = "cld")),
+            feature = "gem"
+        ))]
+        {
+            ProviderMessage::Gemini(GeminiMessage::User {
+                content: Content::Text(_text.into()),
+                name: None,
+            })
+        }
+
+        #[cfg(all(
+            not(any(feature = "co", feature = "oai", feature = "cld", feature = "gem")),
             feature = "xai"
         ))]
         {
-            return Message::Xai(XaiMessage {
+            return ProviderMessage::Xai(XaiMessage {
                 role: "user".to_string(),
                 content: _text.into(),
             });
         }
 
-        #[cfg(not(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai")))]
+        #[cfg(not(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        )))]
         {
             panic!(
-                "At least one of the features `oai`, `gem`, `cld`, or `xai` must be enabled for Message::from_text()"
+                "At least one of the features `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for ProviderMessage::from_text()"
             );
         }
     }
@@ -784,7 +873,7 @@ pub enum ToolName {
     Pdf,
     Summarize,
 
-    /// Communication & Scheduling
+    /// Message & Scheduling
     Email,
     Sms,
     Calendar,
@@ -848,7 +937,7 @@ pub struct Tool {
     /// A brief description of the tool's function.
     pub description: Cow<'static, str>,
     /// A function pointer to invoke the tool with a string input.
-    #[derivative(Default(value = "noop_tool"))]
+    #[derivative(Default(value = "noop_tool"), PartialEq = "ignore", Hash = "ignore")]
     pub invoke: fn(&str) -> String,
 }
 
@@ -893,7 +982,11 @@ pub struct Reflection {
     /// A log of recent activities or messages.
     pub recent_logs: Vec<Cow<'static, str>>,
     /// A function for evaluating the agent's internal state.
-    #[derivative(Default(value = "default_eval_fn"))]
+    #[derivative(
+        Default(value = "default_eval_fn"),
+        PartialEq = "ignore",
+        Hash = "ignore"
+    )]
     pub evaluation_fn: fn(&dyn Agent) -> Cow<'static, str>,
 }
 
@@ -949,18 +1042,18 @@ pub enum Capability {
     TextToSpeech,
 }
 
-/// Manages recent communication and topics of focus for context maintenance.
+/// Manages recent messages and topics of focus for context maintenance.
 #[derive(Eq, Debug, PartialEq, Default, Clone, Hash)]
 pub struct ContextManager {
     /// Recent messages exchanged by the agent.
-    pub recent_messages: Vec<Communication>,
+    pub recent_messages: Vec<Message>,
     /// Topics currently prioritized or focused on.
     pub focus_topics: Vec<Cow<'static, str>>,
 }
 
 /// Represents the primary mission or intent of an agent.
 #[derive(Eq, Debug, PartialEq, Default, Clone, Hash)]
-pub enum Objective {
+pub enum Behavior {
     /// Explore a given environment or dataset.
     #[default]
     Explore,
@@ -970,23 +1063,23 @@ pub enum Objective {
     Research,
     /// Assist other agents or users.
     Assist,
-    /// A custom objective specified by the user.
+    /// A custom behavior specified by the user.
     Custom(Cow<'static, str>),
 }
 
 /// Represents the spatial or logical location of an agent.
 #[derive(Eq, Debug, PartialEq, Default, Clone, Hash)]
-pub enum Position {
-    /// Frontline position (e.g., high activity).
+pub enum PersonaType {
+    /// Frontline persona (e.g., high activity).
     #[default]
     Frontline,
-    /// Support position.
+    /// Support persona.
     Support,
     /// Reconnaissance or scout role.
     Recon,
-    /// Strategic or command-level position.
+    /// Strategic or command-level persona.
     Strategic,
-    /// A custom-defined position.
+    /// A custom-defined persona.
     Custom(Cow<'static, str>),
 }
 
@@ -1056,7 +1149,7 @@ pub enum AgentMessage {
     #[serde(rename = "status")]
     Status(String),
     #[serde(rename = "memory")]
-    Memory(Vec<Communication>),
+    Memory(Vec<Message>),
     #[serde(rename = "capability_advert")]
     CapabilityAdvert {
         sender_id: String,
@@ -1070,7 +1163,7 @@ pub enum AgentMessage {
 #[allow(unused)]
 pub async fn fetch_latest_version() -> Option<String> {
     let client = AsyncClient::new(
-        "autogpt (github.com/kevin-rs/autogpt)",
+        "autogpt (github.com/wiseaidotdev/autogpt)",
         Duration::from_millis(1000),
     )
     .ok()?;
@@ -1120,3 +1213,10 @@ pub fn prompt_for_update() {
         }
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

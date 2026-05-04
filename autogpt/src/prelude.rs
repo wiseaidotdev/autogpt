@@ -1,6 +1,19 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #![doc = include_str!("../INSTALLATION.md")]
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use {futures::future::join_all, tokio::task, tracing::error};
 
 #[cfg(feature = "img")]
@@ -22,8 +35,8 @@ pub use {
     crate::agents,
     crate::agents::agent::AgentGPT,
     crate::common::utils::{
-        AgentMessage, Capability, ClientType, Communication, ContextManager, Knowledge, Persona,
-        Planner, Reflection, Scope, Status, Task, TaskScheduler, Tool,
+        AgentMessage, Capability, ClientType, ContextManager, Knowledge, Message, Persona, Planner,
+        Reflection, Scope, Status, Task, TaskScheduler, Tool,
     },
     crate::traits::agent::Agent,
     crate::traits::composite::AgentFunctions,
@@ -63,12 +76,8 @@ pub use anthropic_ai_sdk::types::message::{
 
 #[cfg(feature = "gem")]
 pub use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
-    messages::{Content, Message},
-    models::Model,
-    stream::StreamBuilder,
-    traits::CTrait,
+    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
+    stream::StreamBuilder, traits::CTrait,
 };
 
 #[cfg(feature = "xai")]
@@ -85,6 +94,9 @@ pub use gems;
 
 #[cfg(feature = "xai")]
 pub use x_ai;
+
+#[cfg(feature = "co")]
+pub use cohere_rust;
 
 #[allow(unreachable_code)]
 /// Represents an AutoGPT instance managing multiple agents and their execution settings.
@@ -172,7 +184,13 @@ impl AutoGPT {
         self
     }
 
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     pub fn with<A>(mut self, agents: A) -> Self
     where
         A: Into<Vec<Arc<Mutex<Box<dyn AgentFunctions>>>>>,
@@ -181,7 +199,13 @@ impl AutoGPT {
         self
     }
 
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     pub fn build(self) -> Result<Self> {
         Ok(Self {
             id: self.id,
@@ -195,7 +219,13 @@ impl AutoGPT {
         })
     }
 
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     pub async fn run(&self) -> Result<String> {
         if self.agents.is_empty() {
             return Err(anyhow!("No agents to run."));
@@ -212,10 +242,10 @@ impl AutoGPT {
 
         for (i, agent_arc) in self.agents.iter().cloned().enumerate() {
             let agent_clone = Arc::clone(&agent_arc);
-            let agent_objective = agent_arc.lock().await.get_agent().objective().clone();
+            let agent_behavior = agent_arc.lock().await.get_agent().behavior().clone();
 
-            let tasks = Arc::new(Mutex::new(Task {
-                description: agent_objective.clone(),
+            let task = Arc::new(Mutex::new(Task {
+                description: agent_behavior.clone(),
                 scope: Some(Scope {
                     crud,
                     auth,
@@ -227,24 +257,24 @@ impl AutoGPT {
                 api_schema: None,
             }));
 
-            let tasks_clone = Arc::clone(&tasks);
+            let task_clone = Arc::clone(&task);
 
             let handle = task::spawn(async move {
-                let mut locked_tasks = tasks_clone.lock().await;
+                let mut locked_task = task_clone.lock().await;
                 let mut agent = agent_clone.lock().await;
 
                 match agent
-                    .execute(&mut locked_tasks, execute, browse, max_tries)
+                    .execute(&mut locked_task, execute, browse, max_tries)
                     .await
                 {
                     Ok(_) => {
-                        debug!("Agent {} ({}) executed successfully", i, agent_objective);
+                        debug!("Agent {} ({}) executed successfully", i, agent_behavior);
                         Ok::<(), anyhow::Error>(())
                     }
                     Err(err) => {
                         error!(
                             "Agent {} ({}) failed with error: {}",
-                            i, agent_objective, err
+                            i, agent_behavior, err
                         );
                         Err(anyhow!("Agent {} failed: {}", i, err))
                     }
@@ -273,3 +303,10 @@ impl AutoGPT {
         Ok("All agents executed successfully.".to_string())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

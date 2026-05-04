@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `Agent` trait.
 //!
 //! This trait defines basic functionalities for agents.
@@ -6,7 +13,7 @@
 //!
 //! ```rust
 //! use autogpt::common::utils::{
-//!     Capability, Communication, ContextManager, Knowledge, Persona, Planner,
+//!     Capability, Message, ContextManager, Knowledge, Persona, Planner,
 //!     Reflection, Status, TaskScheduler, Tool, Task
 //! };
 //! use autogpt::collaboration::Collaborator;
@@ -20,14 +27,14 @@
 //! /// A simple agent implementation that satisfies the full Agent trait.
 //! #[derive(Debug)]
 //! struct SimpleAgent {
-//!     objective: Cow<'static, str>,
-//!     position: Cow<'static, str>,
+//!     behavior: Cow<'static, str>,
+//!     persona: Cow<'static, str>,
 //!     status: Status,
-//!     memory: Vec<Communication>,
+//!     memory: Vec<Message>,
 //!     tools: Vec<Tool>,
 //!     knowledge: Knowledge,
 //!     planner: Option<Planner>,
-//!     persona: Persona,
+//!     profile: Persona,
 //!     collaborators: Vec<Collaborator>,
 //!     reflection: Option<Reflection>,
 //!     scheduler: Option<TaskScheduler>,
@@ -37,16 +44,16 @@
 //! }
 //!
 //! impl Agent for SimpleAgent {
-//!     fn new(objective: Cow<'static, str>, position: Cow<'static, str>) -> Self {
+//!     fn new(persona: Cow<'static, str>, behavior: Cow<'static, str>) -> Self {
 //!         SimpleAgent {
-//!             objective,
-//!             position,
+//!             behavior,
+//!             persona,
 //!             status: Status::Idle,
 //!             memory: vec![],
 //!             tools: vec![],
 //!             knowledge: Knowledge::default(),
 //!             planner: None,
-//!             persona: Persona {
+//!             profile: Persona {
 //!                 name: Cow::Borrowed("Default"),
 //!                 traits: vec![],
 //!                 behavior_script: None,
@@ -67,19 +74,19 @@
 //!         self.status = status;
 //!     }
 //!
-//!     fn objective(&self) -> &Cow<'static, str> {
-//!         &self.objective
+//!     fn behavior(&self) -> &Cow<'static, str> {
+//!         &self.behavior
 //!     }
 //!
-//!     fn position(&self) -> &Cow<'static, str> {
-//!         &self.position
+//!     fn persona(&self) -> &Cow<'static, str> {
+//!         &self.persona
 //!     }
 //!
 //!     fn status(&self) -> &Status {
 //!         &self.status
 //!     }
 //!
-//!     fn memory(&self) -> &Vec<Communication> {
+//!     fn memory(&self) -> &Vec<Message> {
 //!         &self.memory
 //!     }
 //!
@@ -95,8 +102,8 @@
 //!         self.planner.as_ref()
 //!     }
 //!
-//!     fn persona(&self) -> &Persona {
-//!         &self.persona
+//!     fn profile(&self) -> &Persona {
+//!         &self.profile
 //!     }
 //!
 //!     fn collaborators(&self) -> Vec<Collaborator> {
@@ -123,7 +130,7 @@
 //!         &self.tasks
 //!     }
 //!
-//!     fn memory_mut(&mut self) -> &mut Vec<Communication> {
+//!     fn memory_mut(&mut self) -> &mut Vec<Message> {
 //!         &mut self.memory
 //!     }
 //!
@@ -141,8 +148,8 @@
 #[cfg(feature = "net")]
 use crate::collaboration::Collaborator;
 use crate::common::utils::{
-    Capability, Communication, ContextManager, Knowledge, Persona, Planner, Reflection, Status,
-    Task, TaskScheduler, Tool,
+    Capability, ContextManager, Knowledge, Message, Persona, Planner, Reflection, Status, Task,
+    TaskScheduler, Tool,
 };
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -154,9 +161,9 @@ pub trait Agent: Debug {
     ///
     /// # Arguments
     ///
-    /// * `objective` - The objective of the agent.
-    /// * `position` - The position of the agent.
-    fn new(objective: Cow<'static, str>, position: Cow<'static, str>) -> Self
+    /// * `persona` - The persona (role label) of the agent.
+    /// * `behavior` - The behavior (mission/prompt) of the agent.
+    fn new(persona: Cow<'static, str>, behavior: Cow<'static, str>) -> Self
     where
         Self: Sized;
 
@@ -167,17 +174,17 @@ pub trait Agent: Debug {
     /// * `status` - The new status to be assigned to the agent.
     fn update(&mut self, status: Status);
 
-    /// Retrieves the objective of the agent.
-    fn objective(&self) -> &Cow<'static, str>;
+    /// Retrieves the behavior (mission/prompt) of the agent.
+    fn behavior(&self) -> &Cow<'static, str>;
 
-    /// Retrieves the position of the agent.
-    fn position(&self) -> &Cow<'static, str>;
+    /// Retrieves the persona (role label) of the agent.
+    fn persona(&self) -> &Cow<'static, str>;
 
     /// Retrieves the current status of the agent.
     fn status(&self) -> &Status;
 
     /// Retrieves the memory of the agent containing exchanged messages.
-    fn memory(&self) -> &Vec<Communication>;
+    fn memory(&self) -> &Vec<Message>;
 
     /// Returns the agent's tools
     fn tools(&self) -> &Vec<Tool>;
@@ -188,8 +195,8 @@ pub trait Agent: Debug {
     /// Returns a mutable reference to the planner (if any)
     fn planner(&self) -> Option<&Planner>;
 
-    /// Returns the agent's persona
-    fn persona(&self) -> &Persona;
+    /// Returns the agent's profile (personality traits)
+    fn profile(&self) -> &Persona;
 
     /// Returns a list of local and remote collaborators agents
     #[cfg(feature = "net")]
@@ -211,7 +218,7 @@ pub trait Agent: Debug {
     fn tasks(&self) -> &Vec<Task>;
 
     /// Mutable access to memory (messages)
-    fn memory_mut(&mut self) -> &mut Vec<Communication>;
+    fn memory_mut(&mut self) -> &mut Vec<Message>;
 
     /// Mutable access to planner (if any)
     fn planner_mut(&mut self) -> Option<&mut Planner>;
@@ -219,3 +226,10 @@ pub trait Agent: Debug {
     /// Mutable access to context manager
     fn context_mut(&mut self) -> &mut ContextManager;
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

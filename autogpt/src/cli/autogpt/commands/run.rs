@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::cli::autogpt::utils::*;
 use anyhow::{Result, bail};
 use std::env;
@@ -32,3 +39,10 @@ pub fn handle_run(mut feature: String) -> Result<()> {
 
     Ok(())
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, opted, or distributed
+// except according to those terms.

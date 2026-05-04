@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::cli::autogpt::ast::AgentConfig;
 use anyhow::Result;
 use convert_case::{Case, Casing};
@@ -14,27 +21,27 @@ use std::borrow::Cow;
 
 #[derive(Debug, Default, Auto)]
 pub struct {name} {{
-    objective: Cow<'static, str>,
-    position: Cow<'static, str>,
+    behavior: Cow<'static, str>,
+    persona: Cow<'static, str>,
     status: Status,
     agent: AgentGPT,
     client: ClientType,
-    memory: Vec<Communication>,
+    memory: Vec<Message>,
 }}
 
 #[async_trait]
 impl Executor for {name} {{
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
     ) -> Result<()> {{
-        let prompt = self.agent.objective().clone();
+        let prompt = self.agent.behavior().clone();
         let response = self.generate(prompt.as_ref()).await?;
 
-        self.agent.add_communication(Communication {{
+        self.agent.add_message(Message {{
             role: "{role}".into(),
             content: response.clone().into(),
         }});
@@ -47,8 +54,8 @@ impl Executor for {name} {{
 #[tokio::main]
 async fn main() {{
     let agent = {name}::new(
-        "{prompt}".into(),
-        "{position}".into()
+        "{persona}".into(),
+        "{prompt}".into()
     );
 
     let autogpt = AutoGPT::default()
@@ -65,9 +72,16 @@ async fn main() {{
         name = struct_name,
         role = config.role,
         prompt = config.prompt,
-        position = config.position,
+        persona = config.persona,
     );
 
     fs::write(out, code)?;
     Ok(())
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `DesignerGPT` agent.
 //!
 //! This module provides functionality for creating innovative website designs
@@ -16,11 +23,11 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut designer_agent = DesignerGPT::new(
-//!         "Create innovative website designs",
 //!         "UIs",
+//!         "Create innovative website designs",
 //!     ).await;
 //!
-//!     let mut tasks = Task {
+//!     let mut task = Task {
 //!         description: "Design a modern and minimalist homepage design layout for a tech company".into(),
 //!         scope: None,
 //!         urls: None,
@@ -29,7 +36,7 @@
 //!         api_schema: None,
 //!     };
 //!
-//!     if let Err(err) = designer_agent.execute(&mut tasks, true, false, 3).await {
+//!     if let Err(err) = designer_agent.execute(&mut task, true, false, 3).await {
 //!         eprintln!("Error executing designer tasks: {:?}", err);
 //!     }
 //! }
@@ -40,7 +47,7 @@ use crate::agents::agent::AgentGPT;
 #[cfg(feature = "net")]
 use crate::collaboration::Collaborator;
 use crate::common::utils::{
-    Capability, ClientType, Communication, ContextManager, Knowledge, Persona, Planner, Reflection,
+    Capability, ClientType, ContextManager, Knowledge, Message, Persona, Planner, Reflection,
     Status, Task, TaskScheduler, Tool, similarity,
 };
 #[allow(unused)]
@@ -73,7 +80,7 @@ use {openai_dive::v1::models::FlagshipModel, openai_dive::v1::resources::chat::*
 use gems::{
     chat::ChatBuilder,
     imagen::ImageGenBuilder,
-    messages::{Content, Message},
+    messages::{Content, Message as GemMessage},
     models::Model,
     stream::StreamBuilder,
     traits::CTrait,
@@ -81,7 +88,13 @@ use gems::{
     vision::VisionBuilder,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -130,7 +143,7 @@ impl DesignerGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - Objective description for `DesignerGPT`.
+    /// * `behavior` - behavior description for `DesignerGPT`.
     /// * `position` - Position description for `DesignerGPT`.
     ///
     /// # Returns
@@ -140,10 +153,10 @@ impl DesignerGPT {
     /// # Business Logic
     ///
     /// - Constructs the workspace directory path for `DesignerGPT`.
-    /// - Initializes the GPT agent with the given objective and position.
+    /// - Initializes the GPT agent with the given persona and behavior.
     /// - Creates clients for generating images and interacting with Gemini or OpenAI API.
     #[allow(unreachable_code)]
-    pub async fn new(objective: &'static str, position: &'static str) -> Self {
+    pub async fn new(persona: &'static str, behavior: &'static str) -> Self {
         let workspace = var("AUTOGPT_WORKSPACE")
             .unwrap_or("workspace/".to_string())
             .to_owned()
@@ -158,8 +171,8 @@ impl DesignerGPT {
             debug!("Workspace directory '{}' already exists.", workspace);
         }
 
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
         #[cfg(feature = "img")]
         let getimg_api_key = var("GETIMG_API_KEY").unwrap_or_default().to_owned();
         #[cfg(feature = "img")]
@@ -174,7 +187,7 @@ impl DesignerGPT {
 
         info!(
             "{}",
-            format!("[*] {:?}: 🛠️  Getting ready!", agent.position(),)
+            format!("[*] {:?}: 🛠️  Getting ready!", agent.persona(),)
                 .bright_white()
                 .bold()
         );
@@ -191,7 +204,7 @@ impl DesignerGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A reference to tasks containing the description for image generation.
+    /// * `task` - A reference to the task containing the description for image generation.
     ///
     /// # Returns
     ///
@@ -203,39 +216,39 @@ impl DesignerGPT {
     ///
     /// # Business Logic
     ///
-    /// - Constructs a text prompt based on the description from tasks.
-    /// - Adds communication logs to the agent memory for traceability.
+    /// - Constructs a text prompt based on the description from the task.
+    /// - Adds message logs to the agent memory for traceability.
     /// - Generates an image from the text prompt using the getimg client.
     /// - Saves the generated image to the workspace directory.
-    pub async fn generate_image_from_text(&mut self, tasks: &Task) -> Result<()> {
+    pub async fn generate_image_from_text(&mut self, task: &Task) -> Result<()> {
         let img_path = self.workspace.to_string() + "/img.jpg";
 
-        let text_prompt: String = format!("{IMGGET_PROMPT}\n\nUser Prompt: {}", tasks.description);
+        let text_prompt: String = format!("{IMGGET_PROMPT}\n\nUser Prompt: {}", task.description);
         #[allow(unused)]
         let negative_prompt = Some("Disfigured, cartoon, blurry");
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
-            content: tasks.description.clone(),
+            content: task.description.clone(),
         });
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
-                    content: tasks.description.clone(),
+                    content: task.description.clone(),
                 })
                 .await;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(format!("Generating image with prompt: '{text_prompt}'")),
         });
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(format!("Generating image with prompt: '{text_prompt}'")),
                 })
@@ -268,21 +281,27 @@ impl DesignerGPT {
         #[allow(unused)]
         let mut image_data = vec![0];
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             image_data = self.imagen(&text_prompt).await?;
         }
 
         std::fs::write(&img_path, &image_data)?;
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("system"),
             content: Cow::Owned(format!("Image saved at {img_path}")),
         });
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("system"),
                     content: Cow::Owned(format!("Image saved at {img_path}")),
                 })
@@ -291,7 +310,7 @@ impl DesignerGPT {
 
         info!(
             "[*] {:?}: Image saved at {}",
-            self.agent.position(),
+            self.agent.persona(),
             img_path
         );
 
@@ -315,11 +334,11 @@ impl DesignerGPT {
     /// # Business Logic
     ///
     /// - Loads and encodes the image from the specified file path.
-    /// - Logs communication between the user, assistant, and system.
+    /// - Logs messages between the user, assistant, and system.
     /// - Sends the image data to the Gemini or OpenAI API to generate text.
     /// - Returns the generated text description of the image.
     pub async fn generate_text_from_image(&mut self, image_path: &str) -> Result<String> {
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
                 "Requesting text generation from image at path: {image_path}"
@@ -329,7 +348,7 @@ impl DesignerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(format!(
                         "Requesting text generation from image at path: {image_path}"
@@ -348,7 +367,7 @@ impl DesignerGPT {
                 Err(_) => {
                     let error_msg = format!("Failed to load or encode image at path: {image_path}");
 
-                    self.agent.add_communication(Communication {
+                    self.agent.add_message(Message {
                         role: Cow::Borrowed("system"),
                         content: Cow::Owned(error_msg.clone()),
                     });
@@ -356,19 +375,19 @@ impl DesignerGPT {
                     #[cfg(feature = "mem")]
                     {
                         let _ = self
-                            .save_ltm(Communication {
+                            .save_ltm(Message {
                                 role: Cow::Borrowed("system"),
                                 content: Cow::Owned(error_msg.clone()),
                             })
                             .await;
                     }
-                    debug!("[*] {:?}: Error loading image!", self.agent.position());
+                    debug!("[*] {:?}: Error loading image!", self.agent.persona());
                     return Ok("".to_string());
                 }
             };
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned("Generating description from uploaded image...".to_string()),
         });
@@ -376,7 +395,7 @@ impl DesignerGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(
                         "Generating description from uploaded image...".to_string(),
@@ -388,11 +407,11 @@ impl DesignerGPT {
             #[cfg(feature = "gem")]
             ClientType::Gemini(gem_client) => {
                 let params = VisionBuilder::default()
-                    .input(Message::User {
+                    .input(GemMessage::User {
                         content: Content::Text(WEB_DESIGNER_PROMPT.to_string()),
                         name: None,
                     })
-                    .image(Message::Tool {
+                    .image(GemMessage::Tool {
                         content: base64_image_data,
                     })
                     .build()?;
@@ -401,7 +420,7 @@ impl DesignerGPT {
 
                 match result {
                     Ok(response) => {
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(format!("Generated image description: {response}")),
                         });
@@ -409,7 +428,7 @@ impl DesignerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(format!(
                                         "Generated image description: {response}"
@@ -420,7 +439,7 @@ impl DesignerGPT {
 
                         debug!(
                             "[*] {:?}: Got Image Description: {:?}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             response
                         );
 
@@ -428,7 +447,7 @@ impl DesignerGPT {
                     }
 
                     Err(err) => {
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(format!(
                                 "Error generating image description: {err}"
@@ -438,7 +457,7 @@ impl DesignerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(format!(
                                         "Error generating image description: {err}"
@@ -494,7 +513,7 @@ impl DesignerGPT {
                             _ => String::from(""),
                         };
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(format!(
                                 "Generated image description: {response_text}"
@@ -504,7 +523,7 @@ impl DesignerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(format!(
                                         "Generated image description: {response_text}"
@@ -515,7 +534,7 @@ impl DesignerGPT {
 
                         debug!(
                             "[*] {:?}: Got Image Description: {:?}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             response_text
                         );
 
@@ -523,7 +542,7 @@ impl DesignerGPT {
                     }
 
                     Err(err) => {
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(format!(
                                 "Error generating image description: {err}"
@@ -533,7 +552,7 @@ impl DesignerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(format!(
                                         "Error generating image description: {err}"
@@ -569,7 +588,7 @@ impl DesignerGPT {
                     Ok(chat) => {
                         let response_text = chat.choices[0].message.content.clone();
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(
                                 "Generated image description: ".to_string() + &response_text,
@@ -579,7 +598,7 @@ impl DesignerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(
                                         "Generated image description: ".to_string()
@@ -592,7 +611,7 @@ impl DesignerGPT {
                         #[cfg(debug_assertions)]
                         debug!(
                             "[*] {:?}: Got XAI Output: {:?}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             response_text
                         );
 
@@ -602,7 +621,7 @@ impl DesignerGPT {
                     Err(err) => {
                         let err_msg = format!("ERROR_MESSAGE: {err}");
 
-                        self.agent.add_communication(Communication {
+                        self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(err_msg.clone()),
                         });
@@ -610,7 +629,7 @@ impl DesignerGPT {
                         #[cfg(feature = "mem")]
                         {
                             let _ = self
-                                .save_ltm(Communication {
+                                .save_ltm(Message {
                                     role: Cow::Borrowed("assistant"),
                                     content: Cow::Owned(err_msg.clone()),
                                 })
@@ -622,10 +641,40 @@ impl DesignerGPT {
                 }
             }
 
+            #[cfg(feature = "co")]
+            ClientType::Cohere(co_client) => {
+                use cohere_rust::api::GenerateModel;
+                use cohere_rust::api::generate::GenerateRequest;
+
+                let prompt_text = format!("{WEB_DESIGNER_PROMPT}\n\nDescribe the image.");
+                let gen_request = GenerateRequest {
+                    prompt: &prompt_text,
+                    model: Some(GenerateModel::Custom("command-a-03-2025".to_string())),
+                    max_tokens: Some(2048),
+                    ..Default::default()
+                };
+
+                match co_client.generate(&gen_request).await {
+                    Ok(generations) => generations
+                        .iter()
+                        .map(|g| g.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    Err(e) => {
+                        let err_msg = format!("Failed to generate content via Cohere API: {e:?}");
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(err_msg.clone()),
+                        });
+                        return Err(anyhow!(err_msg));
+                    }
+                }
+            }
+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(anyhow!(
-                    "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                    "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                 ));
             }
         };
@@ -637,7 +686,7 @@ impl DesignerGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks containing the GetIMG AI prompt.
+    /// * `task` - A mutable reference to the task containing the GetIMG AI prompt.
     /// * `generated_text` - The generated text to compare with the GetIMG AI prompt.
     ///
     /// # Returns
@@ -651,10 +700,10 @@ impl DesignerGPT {
     ///
     pub async fn compare_text_and_image_prompts(
         &mut self,
-        tasks: &mut Task,
+        task: &mut Task,
         generated_text: &str,
     ) -> Result<bool> {
-        let getimg_prompt = &tasks.description;
+        let getimg_prompt = &task.description;
 
         let similarity_threshold = 0.8;
         let similarity = similarity(getimg_prompt, generated_text);
@@ -687,9 +736,9 @@ impl Executor for DesignerGPT {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - A mutable reference to tasks to be executed.
-    /// * `execute` - A boolean indicating whether to execute the tasks (TODO).
-    /// * `max_tries` - Maximum number of attempts to execute tasks (TODO).
+    /// * `task` - A mutable reference to the task to be executed.
+    /// * `execute` - A boolean indicating whether to execute the task (TODO).
+    /// * `max_tries` - Maximum number of attempts to execute the task (TODO).
     ///
     /// # Returns
     ///
@@ -707,7 +756,7 @@ impl Executor for DesignerGPT {
     ///
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         _execute: bool,
         _browse: bool,
         _max_tries: u64,
@@ -716,11 +765,11 @@ impl Executor for DesignerGPT {
 
         info!(
             "{}",
-            format!("[*] {:?}: Executing task:", self.agent.position(),)
+            format!("[*] {:?}: Executing task:", self.agent.persona(),)
                 .bright_white()
                 .bold()
         );
-        for task in tasks.clone().description.clone().split("- ") {
+        for task in task.clone().description.clone().split("- ") {
             if !task.trim().is_empty() {
                 info!("{} {}", "•".bright_white().bold(), task.trim().cyan());
             }
@@ -730,17 +779,17 @@ impl Executor for DesignerGPT {
         while self.agent.status() != &Status::Completed {
             match self.agent.status() {
                 Status::Idle => {
-                    debug!("[*] {:?}: Idle", self.agent.position());
+                    debug!("[*] {:?}: Idle", self.agent.persona());
 
-                    self.generate_image_from_text(tasks).await?;
+                    self.generate_image_from_text(task).await?;
                     // let generated_text = self.generate_text_from_image("./img.jpg").await?;
 
                     // let text_similarity = self
-                    //     .compare_text_and_image_prompts(tasks, &generated_text)
+                    //     .compare_text_and_image_prompts(task, &generated_text)
                     //     .await?;
                     // debug!(
                     //     "[*] {:?}: Idle: {}",
-                    //     self.agent.position(),
+                    //     self.agent.persona(),
                     //     text_similarity
                     // );
 
@@ -759,3 +808,10 @@ impl Executor for DesignerGPT {
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

@@ -115,7 +115,7 @@ async fn bench_iac_async(agent1: Arc<Agent>) {
         .x_desc("Iteration")
         .y_desc("Latency (µs)")
         .axis_desc_style(("sans-serif", 20))
-        .light_line_style(&TRANSPARENT)
+        .light_line_style(TRANSPARENT)
         .draw()
         .unwrap();
 
@@ -126,7 +126,7 @@ async fn bench_iac_async(agent1: Arc<Agent>) {
         ))
         .unwrap()
         .label("Latency")
-        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], &RED));
+        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], RED));
 
     chart
         .draw_series(std::iter::once(PathElement::new(
@@ -139,7 +139,7 @@ async fn bench_iac_async(agent1: Arc<Agent>) {
         )))
         .unwrap()
         .label("Mean")
-        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], &BLUE));
+        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], BLUE));
 
     chart
         .draw_series(std::iter::once(PathElement::new(
@@ -152,12 +152,12 @@ async fn bench_iac_async(agent1: Arc<Agent>) {
         )))
         .unwrap()
         .label("Median")
-        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], &GREEN));
+        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], GREEN));
 
     chart
         .configure_series_labels()
-        .background_style(&WHITE.mix(0.8))
-        .border_style(&BLACK)
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
         .label_font(("sans-serif", 18))
         .draw()
         .unwrap();

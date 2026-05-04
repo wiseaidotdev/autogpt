@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::agents::agent::AgentGPT;
 use crate::agents::architect::ArchitectGPT;
 use crate::agents::backend::BackendGPT;
@@ -60,20 +67,20 @@ impl AgentType {
     ///
     pub async fn execute(
         &mut self,
-        tasks: &mut Task,
+        task: &mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
     ) -> Result<()> {
         match self {
-            AgentType::Architect(agent) => agent.execute(tasks, execute, browse, max_tries).await,
-            AgentType::Backend(agent) => agent.execute(tasks, execute, browse, max_tries).await,
-            AgentType::Frontend(agent) => agent.execute(tasks, execute, browse, max_tries).await,
+            AgentType::Architect(agent) => agent.execute(task, execute, browse, max_tries).await,
+            AgentType::Backend(agent) => agent.execute(task, execute, browse, max_tries).await,
+            AgentType::Frontend(agent) => agent.execute(task, execute, browse, max_tries).await,
             #[cfg(feature = "img")]
-            AgentType::Designer(agent) => agent.execute(tasks, execute, browse, max_tries).await,
+            AgentType::Designer(agent) => agent.execute(task, execute, browse, max_tries).await,
             #[cfg(feature = "git")]
-            AgentType::Git(agent) => agent.execute(tasks, execute, browse, max_tries).await,
-            AgentType::Optimize(agent) => agent.execute(tasks, execute, browse, max_tries).await,
+            AgentType::Git(agent) => agent.execute(task, execute, browse, max_tries).await,
+            AgentType::Optimize(agent) => agent.execute(task, execute, browse, max_tries).await,
         }
     }
 
@@ -86,16 +93,16 @@ impl AgentType {
     /// # Business Logic
     ///
     /// - Retrieves the position of the agent based on its type.
-    pub fn position(&self) -> String {
+    pub fn persona(&self) -> String {
         match self {
-            AgentType::Architect(agent) => agent.get_agent().position().to_string(),
-            AgentType::Backend(agent) => agent.get_agent().position().to_string(),
-            AgentType::Frontend(agent) => agent.get_agent().position().to_string(),
-            AgentType::Optimize(agent) => agent.get_agent().position().to_string(),
+            AgentType::Architect(agent) => agent.get_agent().persona().to_string(),
+            AgentType::Backend(agent) => agent.get_agent().persona().to_string(),
+            AgentType::Frontend(agent) => agent.get_agent().persona().to_string(),
+            AgentType::Optimize(agent) => agent.get_agent().persona().to_string(),
             #[cfg(feature = "img")]
-            AgentType::Designer(agent) => agent.get_agent().position().to_string(),
+            AgentType::Designer(agent) => agent.get_agent().persona().to_string(),
             #[cfg(feature = "git")]
-            AgentType::Git(agent) => agent.get_agent().position().to_string(),
+            AgentType::Git(agent) => agent.get_agent().persona().to_string(),
         }
     }
 
@@ -117,3 +124,10 @@ impl AgentType {
         }
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

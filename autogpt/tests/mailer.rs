@@ -16,12 +16,12 @@ async fn test_mailer_gpt() {
         .with(fmt::Layer::default())
         .init();
 
-    let objective = "Expertise at summarizing emails";
+    let persona = "Mailer";
+    let behavior = "Expertise at summarizing emails";
     let request = "Summarize the content of the 5 recent email messages";
-    let position = "Mailer";
 
-    let mut mailer = MailerGPT::new(objective, position).await;
-    let mut tasks = Task {
+    let mut mailer = MailerGPT::new(persona, behavior).await;
+    let mut task = Task {
         description: request.into(),
         scope: Some(Scope {
             crud: true,
@@ -33,5 +33,12 @@ async fn test_mailer_gpt() {
         backend_code: None,
         api_schema: None,
     };
-    let _ = mailer.execute(&mut tasks, true, false, 3).await;
+    let _ = mailer.execute(&mut task, true, false, 3).await;
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

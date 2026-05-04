@@ -1,13 +1,13 @@
 [package]
 name = "iac-rs"
-version = "0.0.6"
+version = "0.0.7"
 description = "🛰️ IAC Protocol for Inter and Intra Agents Communications."
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 keywords = ["iac", "agents", "ai", "autogpt", "agi"]
 categories = ["web-programming", "science"]
-repository = "https://github.com/kevin-rs/autogpt"
+repository = "https://github.com/wiseaidotdev/autogpt"
 documentation = "https://docs.rs/iac-rs"
 authors = ["Mahmoud Harmouch <oss@wiseai.dev>"]
 exclude = ["assets", "tests", "benches"]

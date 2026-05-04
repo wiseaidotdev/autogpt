@@ -5,7 +5,7 @@ edition = "2024"
 description = "iac auto network macro crate."
 license = "MIT"
 keywords = ["iac", "iac-macro", "autogpt"]
-repository = "https://github.com/kevin-rs/autogpt"
+repository = "https://github.com/wiseaidotdev/autogpt"
 documentation = "https://docs.rs/auto-net"
 authors = ["Mahmoud Harmouch <oss@wiseai.dev>"]
 

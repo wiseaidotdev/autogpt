@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `Functions` and `AsyncFunctions` traits.
 //!
 //! These traits define special functions for agents.
@@ -11,8 +18,8 @@
 //! use autogpt::traits::functions::Functions;
 //! use autogpt::traits::functions::AsyncFunctions;
 //! use autogpt::traits::functions::ReqResponse;
-//! use autogpt::common::utils::Communication;
-//! use autogpt::prelude::async_trait;
+//! use autogpt::common::utils::Message;
+//! use autogpt::prelude::*;
 //! use std::borrow::Cow;
 //!
 //!
@@ -49,7 +56,7 @@
 //!     ///
 //!     /// # Arguments
 //!     ///
-//!     /// * `tasks` - The tasks associated with the agent.
+//!     /// * `task` - The task associated with the agent.
 //!     /// * `execute` - A boolean indicating whether to execute the generated code by the agent.
 //!     /// * `max_tries` - A integer indicating the max number of tries fixing code bugs.
 //!     ///
@@ -58,7 +65,7 @@
 //!     /// A result indicating success or failure.
 //!     async fn execute<'a>(
 //!        &'a mut self,
-//!        tasks: &'a mut Task,
+//!        task: &'a mut Task,
 //!        _execute: bool,
 //!        _browse: bool,
 //!        _max_tries: u64,
@@ -66,55 +73,55 @@
 //!         Ok(())
 //!     }
 //!
-//!     /// Saves a communication to long-term memory for the agent.
+//!     /// Saves a message to long-term memory for the agent.
 //!     ///
 //!     /// # Arguments
 //!     ///
-//!     /// * `communication` - The communication to save, which contains the role and content.
+//!     /// * `message` - The message to save, which contains the role and content.
 //!     ///
 //!     /// # Returns
 //!     ///
-//!     /// (`Result<()>`): Result indicating the success or failure of saving the communication.
-//!     async fn save_ltm(&mut self, _communication: Communication) -> Result<()> {
+//!     /// (`Result<()>`): Result indicating the success or failure of saving the message.
+//!     async fn save_ltm(&mut self, _message: Message) -> Result<()> {
 //!         Ok(())
 //!     }
 //!
-//!     /// Retrieves all communications stored in the agent's long-term memory.
+//!     /// Retrieves all messages stored in the agent's long-term memory.
 //!     ///
 //!     /// # Returns
 //!     ///
-//!     /// (`Result<Vec<Communication>>`): A result containing a vector of communications retrieved from the agent's long-term memory.
-//!     async fn get_ltm(&self) -> Result<Vec<Communication>> {
+//!     /// (`Result<Vec<Message>>`): A result containing a vector of messages retrieved from the agent's long-term memory.
+//!     async fn get_ltm(&self) -> Result<Vec<Message>> {
 //!         Ok(vec![
-//!             Communication {
+//!             Message {
 //!                 role: Cow::Borrowed("system"),
 //!                 content: Cow::Borrowed("System initialized."),
 //!             },
-//!             Communication {
+//!             Message {
 //!                 role: Cow::Borrowed("user"),
 //!                 content: Cow::Borrowed("Hello, autogpt!"),
 //!             },
 //!         ])
 //!     }
 //!
-//!     /// Retrieves the concatenated context of all communications in the agent's long-term memory.
+//!     /// Retrieves the concatenated context of all messages in the agent's long-term memory.
 //!     ///
 //!     /// # Returns
 //!     ///
-//!     /// (`String`): A string containing the concatenated role and content of all communications stored in the agent's long-term memory.
+//!     /// (`String`): A string containing the concatenated role and content of all messages stored in the agent's long-term memory.
 //!     async fn ltm_context(&self) -> String {
-//!         let comms = [
-//!             Communication {
+//!         let messages = [
+//!             Message {
 //!                 role: Cow::Borrowed("system"),
 //!                 content: Cow::Borrowed("System initialized."),
 //!             },
-//!             Communication {
+//!             Message {
 //!                 role: Cow::Borrowed("user"),
 //!                 content: Cow::Borrowed("Hello, autogpt!"),
 //!             },
 //!         ];
 //!
-//!         comms
+//!         messages
 //!             .iter()
 //!             .map(|c| format!("{}: {}", c.role, c.content))
 //!             .collect::<Vec<_>>()
@@ -139,7 +146,7 @@
 
 use crate::agents::agent::AgentGPT;
 #[cfg(feature = "mem")]
-use crate::common::utils::Communication;
+use crate::common::utils::Message;
 use crate::common::utils::{AgentMessage, Task};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -165,7 +172,7 @@ pub trait AsyncFunctions: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `tasks` - The tasks associated with the agent.
+    /// * `task` - The task associated with the agent.
     /// * `execute` - A boolean indicating whether to execute the generated code by the agent.
     /// * `browse` - Whether to open a browser.
     /// * `max_tries` - A integer indicating the max number of tries fixing code bugs.
@@ -176,33 +183,33 @@ pub trait AsyncFunctions: Send + Sync {
     #[allow(async_fn_in_trait)]
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
     ) -> Result<()>;
 
-    /// Save a communication into long-term memory.
+    /// Save a message into long-term memory.
     ///
     /// # Arguments
     ///
-    /// * `communication` - The communication to save.
+    /// * `message` - The message to save.
     ///
     /// # Returns
     ///
     /// A result indicating success or failure.
     #[allow(async_fn_in_trait)]
     #[cfg(feature = "mem")]
-    async fn save_ltm<'a>(&'a mut self, communication: Communication) -> Result<()>;
+    async fn save_ltm<'a>(&'a mut self, message: Message) -> Result<()>;
 
     /// Get the long-term memory of an agent.
     ///
     /// # Returns
     ///
-    /// A result containing a vector of communications.
+    /// A result containing a vector of messages.
     #[allow(async_fn_in_trait)]
     #[cfg(feature = "mem")]
-    async fn get_ltm<'a>(&'a self) -> Result<Vec<Communication>>;
+    async fn get_ltm<'a>(&'a self) -> Result<Vec<Message>>;
 
     /// Retrieve the long-term memory context as a string.
     ///
@@ -214,15 +221,33 @@ pub trait AsyncFunctions: Send + Sync {
     async fn ltm_context<'a>(&'a self) -> String;
 
     #[allow(async_fn_in_trait)]
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     async fn generate(&mut self, request: &str) -> Result<String>;
 
     #[allow(async_fn_in_trait)]
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     async fn imagen(&mut self, request: &str) -> Result<Vec<u8>>;
 
     #[allow(async_fn_in_trait)]
-    #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+    #[cfg(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))]
     async fn stream(&mut self, request: &str) -> Result<ReqResponse>;
 }
 
@@ -231,7 +256,7 @@ pub trait Executor {
     #[allow(async_fn_in_trait)]
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
@@ -244,3 +269,10 @@ pub trait Collaborate: Send + Sync {
     async fn receive_message(&mut self, message: AgentMessage) -> Result<()>;
     fn get_id(&self) -> &str;
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! # `ArchitectGPT` agent.
 //!
 //! This module provides functionality for creating innovative website designs
@@ -16,11 +23,11 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut architect_agent = ArchitectGPT::new(
-//!         "Create innovative website designs",
 //!         "Web wireframes and UIs",
+//!         "Create innovative website designs",
 //!     ).await;
 //!
-//!     let mut tasks = Task {
+//!     let mut task = Task {
 //!         description: "Design an architectural diagram for a modern chat application".into(),
 //!         scope: None,
 //!         urls: None,
@@ -29,7 +36,7 @@
 //!         api_schema: None,
 //!     };
 //!
-//!     if let Err(err) = architect_agent.execute(&mut tasks, true, false, 3).await {
+//!     if let Err(err) = architect_agent.execute(&mut task, true, false, 3).await {
 //!         eprintln!("Error executing architect tasks: {:?}", err);
 //!     }
 //! }
@@ -41,9 +48,9 @@ use crate::agents::agent::AgentGPT;
 use crate::collaboration::Collaborator;
 #[allow(unused_imports)]
 use crate::common::utils::{
-    Capability, ClientType, Communication, ContextManager, GenerationOutput, Goal, Knowledge,
-    OutputKind, Persona, Planner, Reflection, Scope, Status, Task, TaskScheduler, Tool,
-    extract_array, extract_json_string, strip_code_blocks,
+    Capability, ClientType, ContextManager, GenerationOutput, Goal, Knowledge, Message, OutputKind,
+    Persona, Planner, Reflection, Scope, Status, Task, TaskScheduler, Tool, extract_array,
+    extract_json_string, strip_code_blocks,
 };
 use crate::prompts::architect::{
     ARCHITECT_DIAGRAM_PROMPT, ARCHITECT_ENDPOINTS_PROMPT, ARCHITECT_SCOPE_PROMPT,
@@ -83,15 +90,17 @@ use anthropic_ai_sdk::types::message::{
 
 #[cfg(feature = "gem")]
 use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
-    messages::{Content, Message},
-    models::Model,
-    stream::StreamBuilder,
-    traits::CTrait,
+    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
+    stream::StreamBuilder, traits::CTrait,
 };
 
-#[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+#[cfg(any(
+    feature = "co",
+    feature = "oai",
+    feature = "gem",
+    feature = "cld",
+    feature = "xai"
+))]
 use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "xai")]
@@ -121,7 +130,7 @@ impl ArchitectGPT {
     ///
     /// # Arguments
     ///
-    /// * `objective` - The objective of the agent.
+    /// * `behavior` - The behavior of the agent.
     /// * `position` - The position of the agent.
     ///
     /// # Returns
@@ -132,10 +141,10 @@ impl ArchitectGPT {
     ///
     /// - Constructs the workspace directory path for ArchitectGPT.
     /// - Creates the workspace directory if it does not exist.
-    /// - Initializes the GPT agent with the given objective and position.
+    /// - Initializes the GPT agent with the given persona and behavior.
     /// - Creates clients for interacting with Gemini or OpenAI API and making HTTP requests.
     #[allow(unused)]
-    pub async fn new(objective: &'static str, position: &'static str) -> Self {
+    pub async fn new(persona: &'static str, behavior: &'static str) -> Self {
         let workspace = var("AUTOGPT_WORKSPACE")
             .unwrap_or("workspace/".to_string())
             .to_owned()
@@ -177,41 +186,41 @@ impl ArchitectGPT {
             .arg(workspace.clone() + "/.venv")
             .status();
 
-        if let Ok(status) = create_venv.await {
-            if status.success() {
-                let pip_path = format!("{}/bin/pip", workspace.clone() + "/.venv");
-                let pip_install = Command::new(pip_path)
-                    .arg("install")
-                    .arg("diagrams")
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
+        if let Ok(status) = create_venv.await
+            && status.success()
+        {
+            let pip_path = format!("{}/bin/pip", workspace.clone() + "/.venv");
+            let pip_install = Command::new(pip_path)
+                .arg("install")
+                .arg("diagrams")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
 
-                match pip_install {
-                    Ok(_) => info!(
-                        "{}",
-                        format!("[*] {position:?}: Diagrams installed successfully!")
-                            .bright_white()
-                            .bold()
-                    ),
-                    Err(e) => error!(
-                        "{}",
-                        format!("[*] {position:?}: Error installing Diagrams: {e}!")
-                            .bright_red()
-                            .bold()
-                    ),
-                }
+            match pip_install {
+                Ok(_) => info!(
+                    "{}",
+                    format!("[*] {persona:?}: Diagrams installed successfully!")
+                        .bright_white()
+                        .bold()
+                ),
+                Err(e) => error!(
+                    "{}",
+                    format!("[*] {persona:?}: Error installing Diagrams: {e}!")
+                        .bright_red()
+                        .bold()
+                ),
             }
         }
 
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(objective, position);
-        agent.id = agent.position().to_string().into();
+        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
+        agent.id = agent.persona().to_string().into();
 
         let client = ClientType::from_env();
 
         info!(
             "{}",
-            format!("[*] {:?}: 🛠️  Getting ready!", agent.position())
+            format!("[*] {:?}: 🛠️  Getting ready!", agent.persona())
                 .bright_white()
                 .bold()
         );
@@ -232,7 +241,7 @@ impl ArchitectGPT {
     pub async fn build_request(
         &mut self,
         prompt: &str,
-        tasks: &mut Task,
+        task: &mut Task,
         output_type: OutputKind,
     ) -> Result<GenerationOutput> {
         #[cfg(feature = "mem")]
@@ -244,12 +253,12 @@ impl ArchitectGPT {
         let request: String = format!(
             "{}\n\nTask Description: {}\nPrevious Conversation: {:?}\nCurrent Architecture: {:?}",
             prompt,
-            tasks.description,
+            task.description,
             self.agent.memory(),
             current_code
         );
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(request.clone()),
         });
@@ -257,7 +266,7 @@ impl ArchitectGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("user"),
                     content: Cow::Owned(request.clone()),
                 })
@@ -267,12 +276,18 @@ impl ArchitectGPT {
         #[allow(unused)]
         let mut response_text = String::new();
 
-        #[cfg(any(feature = "oai", feature = "gem", feature = "cld", feature = "xai"))]
+        #[cfg(any(
+            feature = "co",
+            feature = "oai",
+            feature = "gem",
+            feature = "cld",
+            feature = "xai"
+        ))]
         {
             response_text = self.generate(&request).await?;
         }
 
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(response_text.clone()),
         });
@@ -280,21 +295,21 @@ impl ArchitectGPT {
         #[cfg(feature = "mem")]
         {
             let _ = self
-                .save_ltm(Communication {
+                .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(response_text.clone()),
                 })
                 .await;
         }
 
-        debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+        debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
 
         match output_type {
             OutputKind::Text => Ok(GenerationOutput::Text(strip_code_blocks(&response_text))),
             OutputKind::UrlList => {
                 let urls: Vec<Cow<'static, str>> =
                     serde_json::from_str(&extract_array(&response_text).unwrap_or_default())?;
-                tasks.urls = Some(urls.clone());
+                task.urls = Some(urls.clone());
                 self.agent.update(Status::InUnitTesting);
                 Ok(GenerationOutput::UrlList(urls))
             }
@@ -305,49 +320,49 @@ impl ArchitectGPT {
         }
     }
 
-    /// Retrieves the scope based on tasks description and logs the interaction in agent memory.
+    /// Retrieves the scope based on task description and logs the interaction in agent memory.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - The tasks to be performed.
+    /// * `task` - The task to be performed.
     ///
     /// # Returns
     ///
-    /// (`Result<Scope>`): The scope generated based on the tasks description.
+    /// (`Result<Scope>`): The scope generated based on the task description.
     ///
     /// # Side Effects
     ///
     /// - Updates the agent status to `Status::Completed` upon successful completion.
-    /// - Adds both the user prompt and AI response (or error message) to the agent's communication memory.
+    /// - Adds both the user prompt and AI response (or error message) to the agent's message memory.
     ///
     /// # Business Logic
     ///
-    /// - Constructs a request based on the provided tasks.
+    /// - Constructs a request based on the provided task.
     /// - Sends the request to the Gemini or OpenAI API to generate content.
-    /// - Logs the request as a user communication.
+    /// - Logs the request as a user message.
     /// - Parses the response into a Scope object.
-    /// - Logs the response (or error) as an assistant communication.
-    /// - Updates the tasks with the retrieved scope.
+    /// - Logs the response (or error) as an assistant message.
+    /// - Updates the task with the retrieved scope.
     /// - Updates the agent status to `Completed`.
-    pub async fn get_scope(&mut self, tasks: &mut Task) -> Result<Scope> {
+    pub async fn get_scope(&mut self, task: &mut Task) -> Result<Scope> {
         match self
-            .build_request(ARCHITECT_SCOPE_PROMPT, tasks, OutputKind::Scope)
+            .build_request(ARCHITECT_SCOPE_PROMPT, task, OutputKind::Scope)
             .await?
         {
             GenerationOutput::Scope(scope) => {
                 self.agent.update(Status::Completed);
-                debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+                debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
                 Ok(scope)
             }
             _ => Err(anyhow::anyhow!("Expected scope from generation.")),
         }
     }
 
-    /// Retrieves URLs based on tasks description and logs the interaction in agent memory.
+    /// Retrieves URLs based on task description and logs the interaction in agent memory.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - The tasks to be performed.
+    /// * `task` - The task to be performed.
     ///
     /// # Returns
     ///
@@ -356,37 +371,37 @@ impl ArchitectGPT {
     /// # Side Effects
     ///
     /// - Updates the agent status to `Status::InUnitTesting` upon successful completion.
-    /// - Adds both the user prompt and AI response (or error message) to the agent's communication memory.
+    /// - Adds both the user prompt and AI response (or error message) to the agent's message memory.
     ///
     /// # Business Logic
     ///
-    /// - Constructs a request based on the provided tasks.
+    /// - Constructs a request based on the provided task.
     /// - Sends the request to the GPT client to generate content.
-    /// - Logs the request as a user communication.
+    /// - Logs the request as a user message.
     /// - Parses the response into a vector of URLs.
-    /// - Logs the response (or error) as an assistant communication.
-    /// - Updates the tasks with the retrieved URLs.
+    /// - Logs the response (or error) as an assistant message.
+    /// - Updates the task with the retrieved URLs.
     /// - Updates the agent status to `InUnitTesting`.
-    pub async fn get_urls(&mut self, tasks: &mut Task) -> Result<()> {
+    pub async fn get_urls(&mut self, task: &mut Task) -> Result<()> {
         match self
-            .build_request(ARCHITECT_ENDPOINTS_PROMPT, tasks, OutputKind::UrlList)
+            .build_request(ARCHITECT_ENDPOINTS_PROMPT, task, OutputKind::UrlList)
             .await?
         {
             GenerationOutput::UrlList(urls) => {
-                tasks.urls = Some(urls.clone());
+                task.urls = Some(urls.clone());
                 self.agent.update(Status::InUnitTesting);
-                debug!("[*] {:?}: {:?}", self.agent.position(), self.agent);
+                debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
                 Ok(())
             }
             _ => Err(anyhow::anyhow!("Expected URL list from generation.")),
         }
     }
 
-    /// Generates a diagram based on tasks description and logs the interaction in agent memory.
+    /// Generates a diagram based on task description and logs the interaction in agent memory.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - The tasks to be performed.
+    /// * `task` - The task to be performed.
     ///
     /// # Returns
     ///
@@ -394,19 +409,19 @@ impl ArchitectGPT {
     ///
     /// # Side Effects
     ///
-    /// - Adds both the user prompt and AI response (or error message) to the agent's communication memory.
+    /// - Adds both the user prompt and AI response (or error message) to the agent's message memory.
     ///
     /// # Business Logic
     ///
-    /// - Constructs a request based on the provided tasks.
+    /// - Constructs a request based on the provided task.
     /// - Sends the request to the GPT client to generate content.
-    /// - Logs the request as a user communication.
-    /// - Logs the response (or error) as an assistant communication.
+    /// - Logs the request as a user message.
+    /// - Logs the response (or error) as an assistant message.
     /// - Processes the response to strip code blocks.
     /// - Returns the cleaned-up diagram content.
-    pub async fn generate_diagram(&mut self, tasks: &mut Task) -> Result<String> {
+    pub async fn generate_diagram(&mut self, task: &mut Task) -> Result<String> {
         match self
-            .build_request(ARCHITECT_DIAGRAM_PROMPT, tasks, OutputKind::Text)
+            .build_request(ARCHITECT_DIAGRAM_PROMPT, task, OutputKind::Text)
             .await?
         {
             GenerationOutput::Text(diagram) => Ok(diagram),
@@ -415,8 +430,8 @@ impl ArchitectGPT {
     }
 
     pub fn think(&self) -> String {
-        let objective = self.agent.objective();
-        format!("What steps should I take to achieve '{objective}'")
+        let behavior = self.agent.behavior();
+        format!("What steps should I take to achieve '{behavior}'")
     }
 
     pub fn plan(&mut self, context: String) -> Goal {
@@ -427,7 +442,7 @@ impl ArchitectGPT {
                 completed: false,
             },
             Goal {
-                description: "Determine communication between components".into(),
+                description: "Determine message between components".into(),
                 priority: 2,
                 completed: false,
             },
@@ -464,7 +479,7 @@ impl ArchitectGPT {
             "{}",
             format!(
                 "[*] {:?}: Executing goal: {}",
-                self.agent.position(),
+                self.agent.persona(),
                 goal.description
             )
             .cyan()
@@ -482,13 +497,13 @@ impl ArchitectGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Tool [{:?}] executed: {}",
-                        self.agent.position(),
+                        self.agent.persona(),
                         tool.name,
                         result
                     )
                     .green()
                 );
-                self.agent.memory_mut().push(Communication {
+                self.agent.memory_mut().push(Message {
                     role: goal.description.into(),
                     content: result.into(),
                 });
@@ -500,7 +515,7 @@ impl ArchitectGPT {
             "{}",
             format!(
                 "[*] {:?}: No tool matched for goal: {}",
-                self.agent.position(),
+                self.agent.persona(),
                 goal.description
             )
             .yellow()
@@ -508,20 +523,17 @@ impl ArchitectGPT {
     }
 
     pub fn reflect(&mut self) {
-        let entry = format!("Reflection on step toward '{}'", self.agent.objective());
+        let entry = format!("Reflection on step toward '{}'", self.agent.behavior());
 
-        self.agent.memory_mut().push(Communication {
+        self.agent.memory_mut().push(Message {
             role: Cow::Borrowed("assistant"),
             content: entry.clone().into(),
         });
 
-        self.agent
-            .context_mut()
-            .recent_messages
-            .push(Communication {
-                role: Cow::Borrowed("assistant"),
-                content: entry.into(),
-            });
+        self.agent.context_mut().recent_messages.push(Message {
+            role: Cow::Borrowed("assistant"),
+            content: entry.into(),
+        });
 
         if let Some(reflection) = self.agent.reflection() {
             let feedback = (reflection.evaluation_fn)(&self.agent);
@@ -529,14 +541,14 @@ impl ArchitectGPT {
                 "{}",
                 format!(
                     "[*] {:?}: Self Reflection: {}",
-                    self.agent.position(),
+                    self.agent.persona(),
                     feedback
                 )
                 .blue()
             );
         }
     }
-    pub fn has_completed_objective(&self) -> bool {
+    pub fn has_completed_behavior(&self) -> bool {
         self.planner()
             .map(|p| p.current_plan.iter().all(|g| g.completed))
             .unwrap_or(false)
@@ -551,25 +563,25 @@ impl ArchitectGPT {
         }
     }
 
-    fn display_task_info(&self, tasks: &Task) {
-        for task in tasks.clone().description.clone().split("- ") {
+    fn display_task_info(&self, task: &Task) {
+        for task in task.clone().description.clone().split("- ") {
             if !task.trim().is_empty() {
                 info!("{} {}", "•".bright_white().bold(), task.trim().cyan());
             }
         }
     }
 
-    async fn idle(&mut self, tasks: &mut Task) -> Result<()> {
+    async fn idle(&mut self, task: &mut Task) -> Result<()> {
         debug!(
             "{}",
-            format!("[*] {:?}: Idle", self.agent.position())
+            format!("[*] {:?}: Idle", self.agent.persona())
                 .bright_white()
                 .bold()
         );
 
-        let scope = self.get_scope(tasks).await?;
+        let scope = self.get_scope(task).await?;
         if scope.external {
-            let _ = self.get_urls(tasks).await;
+            let _ = self.get_urls(task).await;
         }
 
         self.agent.update(Status::InUnitTesting);
@@ -579,12 +591,12 @@ impl ArchitectGPT {
     async fn unit_test_and_generate(
         &mut self,
         path: &str,
-        tasks: &mut Task,
+        task: &mut Task,
         max_tries: u64,
     ) -> Result<()> {
-        self.filter_urls(tasks).await;
+        self.filter_urls(task).await;
 
-        let mut python_code = self.generate_diagram(tasks).await?;
+        let mut python_code = self.generate_diagram(task).await?;
 
         self.write_code_to_file(path, &python_code).await?;
 
@@ -597,7 +609,7 @@ impl ArchitectGPT {
                         "{}",
                         format!(
                             "[*] {:?}: Diagram generated successfully!",
-                            self.agent.position()
+                            self.agent.persona()
                         )
                         .green()
                         .bold()
@@ -610,7 +622,7 @@ impl ArchitectGPT {
                         "{}",
                         format!(
                             "[*] {:?}: Error generating diagram: {}",
-                            self.agent.position(),
+                            self.agent.persona(),
                             e
                         )
                         .bright_red()
@@ -622,7 +634,7 @@ impl ArchitectGPT {
                             "{}",
                             format!(
                                 "[*] {:?}: Retrying... ({}/{})",
-                                self.agent.position(),
+                                self.agent.persona(),
                                 attempt,
                                 max_tries
                             )
@@ -630,18 +642,18 @@ impl ArchitectGPT {
                             .bold()
                         );
 
-                        tasks.description =
-                            (tasks.description.to_string() + " Got an error: " + &e.to_string())
+                        task.description =
+                            (task.description.to_string() + " Got an error: " + &e.to_string())
                                 .into();
 
-                        python_code = self.search_solution_and_regenerate(tasks).await?;
+                        python_code = self.search_solution_and_regenerate(task).await?;
                         self.write_code_to_file(path, &python_code).await?;
                     } else {
                         error!(
                             "{}",
                             format!(
                                 "[*] {:?}: Maximum retries reached. Exiting...",
-                                self.agent.position()
+                                self.agent.persona()
                             )
                             .bright_red()
                             .bold()
@@ -654,20 +666,17 @@ impl ArchitectGPT {
         Ok(())
     }
 
-    async fn filter_urls(&self, tasks: &mut Task) {
+    async fn filter_urls(&self, task: &mut Task) {
         let mut exclude = Vec::new();
 
-        let urls = tasks
-            .urls
-            .as_ref()
-            .map_or_else(Vec::new, |url| url.to_vec());
+        let urls = task.urls.as_ref().map_or_else(Vec::new, |url| url.to_vec());
 
         for url in &urls {
             info!(
                 "{}",
                 format!(
                     "[*] {:?}: Testing URL Endpoint: {}",
-                    self.agent.position(),
+                    self.agent.persona(),
                     url
                 )
                 .bright_white()
@@ -688,7 +697,7 @@ impl ArchitectGPT {
                         "{}",
                         format!(
                             "[*] {:?}: Failed to request URL {}. Check connection.",
-                            self.agent.position(),
+                            self.agent.persona(),
                             url
                         )
                         .bright_red()
@@ -700,7 +709,7 @@ impl ArchitectGPT {
         }
 
         if !exclude.is_empty() {
-            let filtered: Vec<Cow<'static, str>> = tasks
+            let filtered: Vec<Cow<'static, str>> = task
                 .urls
                 .as_ref()
                 .unwrap()
@@ -708,7 +717,7 @@ impl ArchitectGPT {
                 .filter(|url| !exclude.contains(url))
                 .cloned()
                 .collect();
-            tasks.urls = Some(filtered);
+            task.urls = Some(filtered);
         }
     }
 
@@ -719,7 +728,7 @@ impl ArchitectGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Wrote diagram.py successfully!",
-                        self.agent.position()
+                        self.agent.persona()
                     )
                     .green()
                 );
@@ -730,7 +739,7 @@ impl ArchitectGPT {
                     "{}",
                     format!(
                         "[*] {:?}: Failed writing diagram.py: {}",
-                        self.agent.position(),
+                        self.agent.persona(),
                         e
                     )
                     .bright_red()
@@ -759,15 +768,15 @@ impl ArchitectGPT {
         }
     }
 
-    async fn search_solution_and_regenerate(&mut self, tasks: &mut Task) -> Result<String> {
+    async fn search_solution_and_regenerate(&mut self, task: &mut Task) -> Result<String> {
         // TODO: remove `req_client` arg in duckduckgo
         // let browser = Browser::new(self.req_client.clone());
         // let user_agent = get("firefox").unwrap();
 
-        let query = format!("Python error handling for: {}", tasks.description);
+        let query = format!("Python error handling for: {}", task.description);
         info!(
             "{}",
-            format!("[*] {:?}: Searching: {}", self.agent.position(), query)
+            format!("[*] {:?}: Searching: {}", self.agent.persona(), query)
                 .blue()
                 .bold()
         );
@@ -782,7 +791,7 @@ impl ArchitectGPT {
                 "{}",
                 format!(
                     "[*] {:?}: DuckDuckGo result: {}",
-                    self.agent.position(),
+                    self.agent.persona(),
                     // result.title
                     result
                 )
@@ -790,7 +799,7 @@ impl ArchitectGPT {
             );
         }
 
-        self.generate_diagram(tasks).await
+        self.generate_diagram(task).await
     }
 }
 
@@ -804,17 +813,17 @@ impl ArchitectGPT {
 /// # Business Logic
 ///
 /// - Provides access to the agent associated with the `ArchitectGPT` instance.
-/// - Executes tasks asynchronously based on the current status of the agent.
+/// - Executes the task asynchronously based on the current status of the agent.
 /// - Handles task execution including scope retrieval, URL retrieval, and diagram generation.
 /// - Manages retries in case of failures during task execution.
 #[async_trait]
 impl Executor for ArchitectGPT {
-    /// Executes tasks asynchronously.
+    /// Executes the task asynchronously.
     ///
     /// # Arguments
     ///
-    /// * `tasks` - The tasks to be executed.
-    /// * `execute` - Flag indicating whether to execute the tasks.
+    /// * `task` - The task to be executed.
+    /// * `execute` - Flag indicating whether to execute the task.
     /// * `max_tries` - Maximum number of retry attempts.
     ///
     /// # Returns
@@ -823,13 +832,13 @@ impl Executor for ArchitectGPT {
     ///
     /// # Business Logic
     ///
-    /// - Executes tasks asynchronously based on the current status of the agent.
+    /// - Executes the task asynchronously based on the current status of the agent.
     /// - Handles task execution including scope retrieval, URL retrieval, and diagram generation.
     /// - Manages retries in case of failures during task execution.
     ///
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
@@ -837,12 +846,12 @@ impl Executor for ArchitectGPT {
         self.agent.update(Status::Idle);
         info!(
             "{}",
-            format!("[*] {:?}: Executing task:", self.agent.position())
+            format!("[*] {:?}: Executing task:", self.agent.persona())
                 .bright_white()
                 .bold()
         );
 
-        self.display_task_info(tasks);
+        self.display_task_info(task);
         let path = &(self.workspace.to_string() + "/diagram.py");
 
         while self.agent.status() != &Status::Completed {
@@ -851,26 +860,26 @@ impl Executor for ArchitectGPT {
 
             if browse {
                 // no execute = no unit testing -> max_tries = 1
-                self.idle(tasks).await?;
+                self.idle(task).await?;
             } else {
                 self.agent.update(Status::InUnitTesting);
             }
 
             if execute {
-                self.unit_test_and_generate(path, tasks, max_tries).await?;
+                self.unit_test_and_generate(path, task, max_tries).await?;
             } else {
                 // no execute = no unit testing -> max_tries = 1
-                self.unit_test_and_generate(path, tasks, 1).await?;
+                self.unit_test_and_generate(path, task, 1).await?;
             }
 
             self.mark_goal_complete(goal);
 
             self.reflect();
 
-            if self.has_completed_objective() {
+            if self.has_completed_behavior() {
                 info!(
                     "{}",
-                    format!("[*] {:?}: Objective complete!", self.agent.position())
+                    format!("[*] {:?}: behavior complete!", self.agent.persona())
                         .green()
                         .bold()
                 );
@@ -882,3 +891,10 @@ impl Executor for ArchitectGPT {
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

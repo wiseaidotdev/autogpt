@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::common::utils::{AgentMessage, Task};
 use crate::traits::functions::Collaborate;
 use anyhow::Result;
@@ -62,7 +69,7 @@ impl Collaborate for RemoteAgent {
     async fn handle_task(&mut self, task: Task) -> Result<()> {
         let msg = AgentMessage::Task(task);
 
-        let mut message = Message {
+        let mut message = iac_rs::prelude::Message {
             from: "AgentGPT".into(),
             to: self.id.clone().into(),
             msg_type: MessageType::DelegateTask,
@@ -127,3 +134,10 @@ impl fmt::Debug for AgentNet {
             .finish()
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

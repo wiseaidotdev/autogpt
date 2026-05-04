@@ -1,3 +1,11 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+#![allow(dead_code)]
 pub(crate) const ARCHITECT_SCOPE_PROMPT: &str = r#"
 Generate a response tailored for website project descriptions.
 
@@ -44,7 +52,7 @@ Generate a response focused on selecting external API endpoints for website deve
 
 Instructions:
 - Provide a detailed project description outlining the purpose and functionalities required for the website.
-- Identify and compile a list of external public API endpoints that align with the project's objectives.
+- Identify and compile a list of external public API endpoints that align with the project's behaviors.
 - Prioritize endpoints that do not require API keys for access.
 - Format the response as a list of URLs enclosed in square brackets, like so: ["url_1", "url_2", "url_3", ...]
 
@@ -116,3 +124,10 @@ Examples:
 
 Ensure the generated code closely corresponds to the user prompt and project requirements.
 "#;
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

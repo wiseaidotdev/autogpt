@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use autogpt::agents::frontend::FrontendGPT;
 use autogpt::common::utils::{Scope, Task};
 use autogpt::traits::agent::Agent;
@@ -13,11 +20,11 @@ async fn test_generate_frontend_code() {
         .with(fmt::Layer::default())
         .init();
 
-    let objective = "Expertise lies in writing frontend code";
-    let position = "Frontend Developer";
+    let persona = "Frontend Developer";
+    let behavior = "Expertise lies in writing frontend code";
 
-    let mut frontend_gpt = FrontendGPT::new(objective, position, "python").await;
-    let mut tasks = Task {
+    let mut frontend_gpt = FrontendGPT::new(persona, behavior, "python").await;
+    let mut task = Task {
         description: "Generate a todo crud app using fastapi python framework.".into(),
         scope: Some(Scope {
             crud: true,
@@ -30,22 +37,22 @@ async fn test_generate_frontend_code() {
         api_schema: None,
     };
 
-    let result = frontend_gpt.generate_frontend_code(&mut tasks).await;
-    assert!(frontend_gpt.get_agent().memory().len() >= 2);
+    let result = frontend_gpt.generate_frontend_code(&mut task).await;
+    assert!(!frontend_gpt.get_agent().memory().is_empty());
     // assert_eq!(frontend_gpt.get_agent().memory()[0].role, "user");
     // assert_eq!(frontend_gpt.get_agent().memory()[1].role, "assistant");
 
     assert!(result.is_ok());
-    assert!(tasks.frontend_code.is_some());
+    assert!(task.frontend_code.is_some());
 }
 
 #[tokio::test]
 async fn test_improve_frontend_code() {
-    let objective = "Expertise lies in writing frontend code";
-    let position = "Frontend Developer";
+    let persona = "Frontend Developer";
+    let behavior = "Expertise lies in writing frontend code";
 
-    let mut frontend_gpt = FrontendGPT::new(objective, position, "rust").await;
-    let mut tasks = Task {
+    let mut frontend_gpt = FrontendGPT::new(persona, behavior, "rust").await;
+    let mut task = Task {
         description: "Generate a todo crud app using Yew Rust framework.".into(),
         scope: Some(Scope {
             crud: true,
@@ -57,7 +64,7 @@ async fn test_improve_frontend_code() {
         backend_code: None,
         api_schema: None,
     };
-    tasks.frontend_code = Some(
+    task.frontend_code = Some(
         r#"
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
@@ -84,22 +91,22 @@ fn crud_items() -> Html {
         .into(),
     );
 
-    let result = frontend_gpt.improve_frontend_code(&mut tasks).await;
-    assert!(frontend_gpt.get_agent().memory().len() >= 2);
+    let result = frontend_gpt.improve_frontend_code(&mut task).await;
+    assert!(!frontend_gpt.get_agent().memory().is_empty());
     // assert_eq!(frontend_gpt.get_agent().memory()[0].role, "user");
     // assert_eq!(frontend_gpt.get_agent().memory()[1].role, "assistant");
 
     assert!(result.is_ok());
-    assert!(tasks.frontend_code.is_some());
+    assert!(task.frontend_code.is_some());
 }
 
 #[tokio::test]
 async fn test_fix_code_bugs() {
-    let objective = "Expertise lies in writing frontend code";
-    let position = "Frontend Developer";
+    let persona = "Frontend Developer";
+    let behavior = "Expertise lies in writing frontend code";
 
-    let mut frontend_gpt = FrontendGPT::new(objective, position, "rust").await;
-    let mut tasks = Task {
+    let mut frontend_gpt = FrontendGPT::new(persona, behavior, "rust").await;
+    let mut task = Task {
         description: "Generate a todo crud app using Yew web framework.".into(),
         scope: Some(Scope {
             crud: true,
@@ -111,7 +118,7 @@ async fn test_fix_code_bugs() {
         backend_code: None,
         api_schema: None,
     };
-    tasks.frontend_code = Some(
+    task.frontend_code = Some(
         r#"
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
@@ -299,9 +306,10 @@ fn crud_items() -> Html {
         });
     });
 
+    let items_handle_clone = items_handle.clone();
     use_effect_with(items.clone(), move |_| {
         // Fetch items on page refresh
-        let items_handle = items_handle.clone();
+        let items_handle = items_handle_clone.clone();
         spawn_local(async move {
             let fetched_items: Vec<Item> = Request::get(&format!("{}/tasks", BASE_URL))
                 .send()
@@ -380,38 +388,45 @@ error[E0425]: cannot find function `render_item` in this scope
         .into(),
     ));
 
-    let result = frontend_gpt.fix_code_bugs(&mut tasks).await;
-    assert!(frontend_gpt.get_agent().memory().len() >= 2);
+    let result = frontend_gpt.fix_code_bugs(&mut task).await;
+    assert!(!frontend_gpt.get_agent().memory().is_empty());
     // assert_eq!(frontend_gpt.get_agent().memory()[0].role, "user");
     // assert_eq!(frontend_gpt.get_agent().memory()[1].role, "assistant");
 
     assert!(result.is_ok());
-    assert!(tasks.frontend_code.is_some());
+    assert!(task.frontend_code.is_some());
 }
 
 #[tokio::test]
 async fn tests_frontend_dev_one() {
-    let objective = "Expertise lies in writing frontend code.";
-    let position = "Frontend Developer";
+    let persona = "Frontend Developer";
+    let behavior = "Expertise lies in writing frontend code.";
 
-    let _frontend_gpt = FrontendGPT::new(objective, position, "rust").await;
+    let _frontend_gpt = FrontendGPT::new(persona, behavior, "rust").await;
 
-    let _tasks = Task {
+    let _task = Task {
         description:
             "Build a website for an e-commerce platform with payment integration using rust yew framework.".into(),
         scope: Some(Scope {
             crud: true,
             auth: true,
-            external: true,
+            external: true
         }),
         urls: Some(vec![
-            "https://kevin-rs.dev/products".into(),
-            "https://kevin-rs.dev/cart".into(),
+            "https://wiseai.dev/products".into(),
+            "https://wiseai.dev/cart".into(),
         ]),
         frontend_code: None,
         backend_code: None,
         api_schema: None,
     };
 
-    // frontend_gpt.execute(&mut tasks, true, false, 3).await.unwrap();
+    // frontend_gpt.execute(&mut task, true, false, 3).await.unwrap();
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

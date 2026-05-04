@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #[cfg(feature = "cli")]
 use clap::Parser;
 
@@ -40,7 +47,7 @@ AUTHORS:
 ██    ██ ██   ██ ██      ██   ██ ██    ██ ██         ██    
  ██████  ██   ██  ██████ ██   ██  ██████  ██         ██    
 
-The `orchgpt` CLI is the central orchestrator that manages communication and execution
+The `orchgpt` CLI is the central orchestrator that manages message and execution
 of autonomous agents in the AutoGPT ecosystem.
 
 It acts as the control plane in **networking mode**, receiving commands from one or more
@@ -64,3 +71,10 @@ pub struct Cli {
     #[clap(global = true, short, long)]
     pub verbose: bool,
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

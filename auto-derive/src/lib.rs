@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 extern crate proc_macro;
 
 use quote::quote;
@@ -10,10 +17,10 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let expanded = quote! {
         impl Agent for #name {
-            fn new(objective: Cow<'static, str>, position: Cow<'static, str>) -> Self {
+            fn new(persona: Cow<'static, str>, behavior: Cow<'static, str>) -> Self {
                 let mut agent = Self::default();
-                agent.agent.objective = objective;
-                agent.agent.position = position;
+                agent.agent.persona = persona;
+                agent.agent.behavior = behavior;
                 agent
             }
 
@@ -21,19 +28,19 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 self.agent.update(status);
             }
 
-            fn objective(&self) -> &std::borrow::Cow<'static, str> {
-                &self.agent.objective
+            fn behavior(&self) -> &std::borrow::Cow<'static, str> {
+                &self.agent.behavior
             }
 
-            fn position(&self) -> &std::borrow::Cow<'static, str> {
-                &self.agent.position
+            fn persona(&self) -> &std::borrow::Cow<'static, str> {
+                &self.agent.persona
             }
 
             fn status(&self) -> &Status {
                 &self.agent.status
             }
 
-            fn memory(&self) -> &Vec<Communication> {
+            fn memory(&self) -> &Vec<Message> {
                 &self.agent.memory
             }
 
@@ -49,8 +56,8 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 self.agent.planner.as_ref()
             }
 
-            fn persona(&self) -> &Persona {
-                &self.agent.persona
+            fn profile(&self) -> &Persona {
+                &self.agent.profile
             }
 
             #[cfg(feature = "net")]
@@ -81,7 +88,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 &self.agent.tasks
             }
 
-            fn memory_mut(&mut self) -> &mut Vec<Communication> {
+            fn memory_mut(&mut self) -> &mut Vec<Message> {
                 &mut self.agent.memory
             }
 
@@ -104,12 +111,12 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         impl AsyncFunctions for #name {
             async fn execute<'a>(
                 &'a mut self,
-                tasks: &'a mut Task,
+                task: &'a mut Task,
                 execute: bool,
                 browse: bool,
                 max_tries: u64,
             ) -> Result<()> {
-                <#name as Executor>::execute(self, tasks, execute, browse, max_tries).await
+                <#name as Executor>::execute(self, task, execute, browse, max_tries).await
             }
 
             /// Saves a communication to long-term memory for the agent.
@@ -128,15 +135,15 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             /// - The communication is embedded and stored using the agent's unique ID as the namespace.
             /// - It handles the embedding and metadata for the communication, ensuring it's stored correctly.
             #[cfg(feature = "mem")]
-            async fn save_ltm(&mut self, communication: Communication) -> Result<()> {
-                save_long_term_memory(&mut self.client, self.agent.id.clone(), communication).await
+            async fn save_ltm(&mut self, message: Message) -> Result<()> {
+                save_long_term_memory(&mut self.client, self.agent.id.clone(), message).await
             }
 
             /// Retrieves all communications stored in the agent's long-term memory.
             ///
             /// # Returns
             ///
-            /// (`Result<Vec<Communication>>`): A result containing a vector of communications retrieved from the agent's long-term memory.
+            /// (`Result<Vec<Message>>`): A result containing a vector of communications retrieved from the agent's long-term memory.
             ///
             /// # Business Logic
             ///
@@ -144,7 +151,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             /// - The function will return a list of communications that are indexed by the agent's unique ID.
             /// - It handles the retrieval of the stored metadata and content for each communication.
             #[cfg(feature = "mem")]
-            async fn get_ltm(&self) -> Result<Vec<Communication>> {
+            async fn get_ltm(&self) -> Result<Vec<Message>> {
                 load_long_term_memory(self.agent.id.clone()).await
             }
 
@@ -169,7 +176,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     #[cfg(feature = "gem")]
                     ClientType::Gemini(gem_client) => {
                         let parameters = ChatBuilder::default()
-                            .messages(vec![Message::User {
+                            .messages(vec![gems::messages::Message::User {
                                 content: Content::Text(request.to_string()),
                                 name: None,
                             }])
@@ -246,11 +253,38 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(chat.choices[0].message.content.clone())
                     }
 
+                    #[cfg(feature = "co")]
+                    ClientType::Cohere(co_client) => {
+                        use cohere_rust::api::chat::ChatRequest;
+                        use cohere_rust::api::GenerateModel;
+
+                        let chat_request = ChatRequest {
+                            message: request,
+                            ..Default::default()
+                        };
+
+                        let mut receiver = match co_client.chat(&chat_request).await {
+                            Ok(rx) => rx,
+                            Err(e) => return Err(anyhow::anyhow!("Cohere API initialization failed: {}", e)),
+                        };
+                        let mut full_text = String::new();
+                        while let Some(res) = receiver.recv().await {
+                            match res {
+                                Ok(cohere_rust::api::chat::ChatStreamResponse::ChatTextGeneration { text, .. }) => {
+                                    full_text.push_str(&text);
+                                }
+                                Ok(_) => {}
+                                // Err(e) => return Err(anyhow!("Cohere chat error: {:?}", e)),
+                                Err(_) => {},
+                            }
+                        }
+                        Ok(full_text)
+                    }
 
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
-                            "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                            "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }
@@ -260,15 +294,15 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 match &mut self.client {
                     #[cfg(feature = "gem")]
                     ClientType::Gemini(gem_client) => {
-                        gem_client.set_model(Model::FlashExpImage);
+                        gem_client.set_model(Model::Imagen4);
 
-                        let input = Message::User {
+                        let input = gems::messages::Message::User {
                             content: Content::Text(request.into()),
                             name: None,
                         };
 
                         let params = ImageGenBuilder::default()
-                            .model(Model::FlashExpImage)
+                            .model(Model::Imagen4)
                             .input(input)
                             .build()?;
 
@@ -294,11 +328,16 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(Default::default())
                     }
 
+                    #[cfg(feature = "co")]
+                    ClientType::Cohere(_co_client) => {
+                        // Cohere does not support image generation
+                        Ok(Default::default())
+                    }
 
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
-                            "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                            "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }
@@ -309,8 +348,8 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     #[cfg(feature = "gem")]
                     ClientType::Gemini(gem_client) => {
                         let parameters = StreamBuilder::default()
-                            .model(Model::Flash20)
-                            .input(Message::User {
+                            .model(Model::Flash3Preview)
+                            .input(gems::messages::Message::User {
                                 content: Content::Text(request.into()),
                                 name: None,
                             })
@@ -337,11 +376,16 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(Default::default())
                     }
 
+                    #[cfg(feature = "co")]
+                    ClientType::Cohere(_co_client) => {
+                        // TODO: Implement this
+                        Ok(Default::default())
+                    }
 
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
-                            "No valid AI client configured. Enable `gem`, `oai`, `cld`, or `xai` feature."
+                            "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }
@@ -351,3 +395,10 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     proc_macro::TokenStream::from(expanded)
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

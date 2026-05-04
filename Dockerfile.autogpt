@@ -1,6 +1,6 @@
 FROM rust:alpine AS builder
 
-LABEL maintainer="kevin-rs <https://github.com/kevin-rs>"
+LABEL maintainer="wiseaidotdev <https://github.com/wiseaidotdev>"
 LABEL author="Mahmoud Harmouch <https://github.com/wiseaidev>"
 RUN apk update && apk upgrade
 RUN apk add --no-cache \

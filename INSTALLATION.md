@@ -39,7 +39,7 @@ docker run -it \
 Fork/Clone The Repo:
 
 ```sh
-git clone https://github.com/kevin-rs/autogpt.git
+git clone https://github.com/wiseaidotdev/autogpt.git
 ```
 
 Navigate to the core autogpt directory:
@@ -162,11 +162,10 @@ use autogpt::prelude::*;
 
 #[tokio::main]
 async fn main() {
-    let position = "Lead UX/UI Designer";
+    let persona = "Lead UX/UI Designer";
+    let behavior = "Generate a diagram for a simple web application running on Kubernetes.";
 
-    let prompt = "Generate a diagram for a simple web application running on Kubernetes.";
-
-    let agent = ArchitectGPT::new(prompt, position).await;
+    let agent = ArchitectGPT::new(persona, behavior).await;
 
     let autogpt = AutoGPT::default()
         .with(agents![agent])
@@ -195,11 +194,10 @@ use autogpt::prelude::*;
 
 #[tokio::main]
 async fn main() {
-    let position = "Backend Developer";
+    let persona = "Backend Developer";
+    let behavior = "Develop a weather backend apis in Rust using axum.";
 
-    let prompt = "Develop a weather backend apis in Rust using axum.";
-
-    let agent = BackendGPT::new(prompt, position, "rust").await;
+    let agent = BackendGPT::new(persona, behavior, "rust").await;
 
     let autogpt = AutoGPT::default()
         .with(agents![agent])
@@ -224,11 +222,10 @@ use autogpt::prelude::*;
 
 #[tokio::main]
 async fn main() {
-    let position = "UX/UI Designer";
+    let persona = "UX/UI Designer";
+    let behavior = "Generate UI for a weather app using React JS.";
 
-    let prompt = "Generate UI for a weather app using React JS.";
-
-    let agent = FrontendGPT::new(prompt, position, "javascript").await;
+    let agent = FrontendGPT::new(persona, behavior, "javascript").await;
 
     let autogpt = AutoGPT::default()
         .with(agents![agent])
@@ -257,40 +254,36 @@ use autogpt::prelude::*;
 /// The agent struct must contain at least the following fields.
 #[derive(Debug, Default, Auto)]
 pub struct CustomAgent {
-    objective: Cow<'static, str>,
-    position: Cow<'static, str>,
-    status: Status,
-    agent: AgentGPT,
-    client: ClientType,
-    memory: Vec<Communication>,
+    pub agent: AgentGPT,
+    pub client: ClientType,
 }
 
 #[async_trait]
 impl Executor for CustomAgent {
     async fn execute<'a>(
         &'a mut self,
-        tasks: &'a mut Task,
+        task: &'a mut Task,
         execute: bool,
         browse: bool,
         max_tries: u64,
     ) -> Result<()> {
         // Custom agent logic to interact with `client` (e.g. OpenAI, Gemini, XAI, etc).
 
-        // Use the `generate` method to send the agent's objective as a prompt
+        // Use the `generate` method to send the agent's behavior as a prompt
         // to the configured AI client (e.g., OpenAI, Gemini, Claude). This abstracts
-        // over the client implementation and returns a model-generated response.\
-        let prompt = self.agent.objective().clone();
-        let response = self.generate(prompt.as_ref()).await?;
+        // over the client implementation and returns a model-generated response.
+        let behavior = self.agent.behavior().clone();
+        let response = self.generate(behavior.as_ref()).await?;
 
         // (Optional) Store the result in the task or agent state
-        self.agent.add_communication(Communication {
+        self.agent.add_message(Message {
             role: "assistant".into(),
             content: response.clone().into(),
         });
 
         // (Optional) Store the result in the vector DB (e.g. pinecone)
         let _ = self
-            .save_ltm(Communication {
+            .save_ltm(Message {
                 role: "assistant".into(),
                 content: response.clone().into(),
             })
@@ -301,11 +294,10 @@ impl Executor for CustomAgent {
 
 #[tokio::main]
 async fn main() {
-    let position = "General Purpose Agent";
+    let persona = "General Purpose Agent";
+    let behavior = "Can do anything.";
 
-    let prompt = "Can do anything.";
-
-    let agent = CustomAgent::new(prompt.into(), position.into());
+    let agent = CustomAgent::new(persona.into(), behavior.into());
 
     let autogpt = AutoGPT::default()
         .with(agents![agent])
@@ -353,27 +345,30 @@ To configure the CLI and or the SDK environment, follow these steps:
    This variable guide the agents on where to generate the code within your project structure.
 
 1. **AI Provider Selection**: You can control which AI client is initialized at runtime using the `AI_PROVIDER` environment variable.
-
-   - `xai` - Initializes the XAI Grok client (**requires** the `xai` feature).
+   - `gemini` - Initializes the Gemini client (**requires** the `gem` feature). This is the **default** if `AI_PROVIDER` is not set.
    - `openai` - Initializes the OpenAI client (**requires** the `oai` feature).
    - `anthropic` - Initializes the Anthropic Claude client (**requires** the `cld` feature).
-   - `gemini` - Initializes the Gemini client (**requires** the `gem` feature). This is the **default** if `AI_PROVIDER` is not set.
+   - `xai` - Initializes the XAI Grok client (**requires** the `xai` feature).
+   - `cohere` - Initializes the Cohere client (**requires** the `co` feature).
 
    ```sh
+   # Use Gemini (default, requires `--features gem`)
+   export AI_PROVIDER=gemini
+
    # Use OpenAI (requires `--features oai`)
    export AI_PROVIDER=openai
-
-   # Use Gemini (requires `--features gem`)
-   export AI_PROVIDER=gemini
 
    # Use Anthropic Claude (requires `--features cld`)
    export AI_PROVIDER=anthropic
 
    # Use XAI Grok (requires `--features xai`)
    export AI_PROVIDER=xai
+
+   # Use Cohere (requires `--features co`)
+   export AI_PROVIDER=cohere
    ```
 
-   Make sure to enable the corresponding Cargo features (`oai`, `xai`, `cld`, or `gem`) when building your project.
+   Make sure to enable the corresponding Cargo features (`gem`, `oai`, `xai`, `cld`, or `co`) when building your project.
 
 1. **API Key Configuration**: Additionally, you need to set up the Gemini API key by setting the following environment variable:
 
@@ -420,15 +415,43 @@ orchgpt
 
 ### 🧠 Running Agents
 
-To start an agent and establish a connection with the orchestrator (either locally or on a remote machine), run:
+#### 🤖 Interactive Mode (Default)
+
+To launch the **GenericGPT interactive shell**, simply run `autogpt` with no arguments:
 
 ```sh
 autogpt
 ```
 
-This command launches the agent and connects it to the orchestrator over a secure TLS connection using the configured address.
+This opens a conversational AI shell where you can:
 
-Once the agent is running, you can interact with it using simple command syntax:
+- Type any prompt to get an immediate response from the active agent.
+- Switch providers at runtime with `/provider`.
+- Browse and switch models with `/models`.
+- List and resume past sessions with `/sessions`.
+- Check current status with `/status`.
+- Press `ESC` to interrupt a running generation.
+- Type `exit` or `quit` to save the session and close.
+
+#### ⚡ Direct Prompt Mode
+
+For a quick one-shot non-interactive prompt:
+
+```sh
+autogpt -p "Explain what a Rust lifetime is"
+```
+
+#### 🌐 Networking Mode
+
+To connect to an orchestrator and interact with specialized agents (ArchitectGPT, BackendGPT, etc.), first start the orchestrator, then run:
+
+```sh
+autogpt --net
+```
+
+This command connects to the orchestrator over a secure TLS connection using the configured address.
+
+Once connected, you can interact with agents using:
 
 ```sh
 /<agent_name> <action> <input> | <language>
@@ -437,7 +460,7 @@ Once the agent is running, you can interact with it using simple command syntax:
 For example, to instruct the orchestrator to **create** a new agent, send a command like:
 
 ```sh
-/ArchitectGPT create "fastapi app" | python
+/arch create "fastapi app" | python
 ```
 
 This will send a message to the orchestrator with:
@@ -470,3 +493,5 @@ docker run -i \
 ```
 
 ---
+
+© 2026 Wise AI Foundation

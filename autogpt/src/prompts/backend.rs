@@ -1,3 +1,11 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+#![allow(dead_code)]
 pub(crate) const WEBSERVER_CODE_PROMPT: &str = r#"
 Your task is to generate backend code for a web server. Generate all your code inside one single file/module.
 Don't assume there are module outside the main file, like "from .database import engine, get_db". Generate their
@@ -283,3 +291,10 @@ async def get_weather(request: Request):
 
 Your Output:
 "#;
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

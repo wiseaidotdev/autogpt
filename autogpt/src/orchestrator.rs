@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -105,25 +112,25 @@ impl Orchestrator {
                         let new_agent = match msg.to.as_str() {
                             "arch" => {
                                 info!("[*] \"Orchestrator\": Creating Architect agent '{}'", msg.to);
-                                Some(AgentType::Architect(ArchitectGPT::new("Architect agent", "ArchitectGPT").await))
+                                Some(AgentType::Architect(ArchitectGPT::new("ArchitectGPT", "Architect agent").await))
                             }
                             "back" => {
                                 info!("[*] \"Orchestrator\": Creating Backend agent '{}', language: {}", msg.to, language);
-                                Some(AgentType::Backend(BackendGPT::new("Backend agent", "BackendGPT", language).await))
+                                Some(AgentType::Backend(BackendGPT::new("BackendGPT", "Backend agent", language).await))
                             }
                             "front" => {
                                 info!("[*] \"Orchestrator\": Creating Frontend agent '{}', language: {}", msg.to, language);
-                                Some(AgentType::Frontend(FrontendGPT::new("Frontend agent", "FrontendGPT", language).await))
+                                Some(AgentType::Frontend(FrontendGPT::new("FrontendGPT", "Frontend agent", language).await))
                             }
                             #[cfg(feature = "img")]
                             "design" => {
                                 info!("[*] \"Orchestrator\": Creating Designer agent '{}'", msg.to);
-                                Some(AgentType::Designer(DesignerGPT::new("Designer agent", "DesignerGPT").await))
+                                Some(AgentType::Designer(DesignerGPT::new("DesignerGPT", "Designer agent").await))
                             }
                             #[cfg(feature = "git")]
                             "git" => {
                                 info!("[*] \"Orchestrator\": Creating Git agent '{}'", msg.to);
-                                Some(AgentType::Git(GitGPT::new("Git agent", "GitGPT").await))
+                                Some(AgentType::Git(GitGPT::new("GitGPT", "Git agent").await))
                             }
                             _ => {
                                 warn!("[*] \"Orchestrator\": Unknown agent type requested '{}'", msg.to);
@@ -151,16 +158,16 @@ impl Orchestrator {
 
                     MessageType::Run => {
                         if let Some(agent) = agents.get_mut(&msg.to) {
-                            info!("[*] \"Orchestrator\": Executing tasks for agent '{}'", msg.to);
-                            let mut tasks = Task::from_payload(&msg.payload_json);
-                            if let Err(e) = agent.execute(&mut tasks, true, false, 3).await {
-                                error!("[*] \"Orchestrator\": Error executing tasks for agent '{}': {:?}", msg.to, e);
-                                format!("❌ Failed to execute tasks for agent '{}'", msg.to)
+                            info!("[*] \"Orchestrator\": Executing task for agent '{}'", msg.to);
+                            let mut task = Task::from_payload(&msg.payload_json);
+                            if let Err(e) = agent.execute(&mut task, true, false, 3).await {
+                                error!("[*] \"Orchestrator\": Error executing task for agent '{}': {:?}", msg.to, e);
+                                format!("❌ Failed to execute task for agent '{}'", msg.to)
                             } else {
-                                format!("✅ Executed tasks for agent '{}'", msg.to)
+                                format!("✅ Executed task for agent '{}'", msg.to)
                             }
                         } else {
-                            warn!("[*] \"Orchestrator\": Agent '{}' not found for running tasks", msg.to);
+                            warn!("[*] \"Orchestrator\": Agent '{}' not found for running task", msg.to);
                             format!("❌ Agent '{}' not found", msg.to)
                         }
                     }
@@ -191,3 +198,10 @@ impl Orchestrator {
         Ok(())
     }
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

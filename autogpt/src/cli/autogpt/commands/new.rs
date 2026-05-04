@@ -1,3 +1,10 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::cli::autogpt::ast::AgentConfig;
 use crate::cli::autogpt::utils::*;
 use anyhow::{Context, Result, bail};
@@ -12,7 +19,7 @@ const DEFAULT_YAML: &str = r#"
 name: agent_name
 ai_provider: gemini
 model: gemini-2.0-flash
-position: Backend Engineer
+persona: Backend Engineer
 role: user
 prompt: |
   Describe a scalable microservice architecture.
@@ -165,3 +172,10 @@ fn find_shell() -> Result<PathBuf> {
     }
     Ok(Path::new(&home).join(".bashrc"))
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.

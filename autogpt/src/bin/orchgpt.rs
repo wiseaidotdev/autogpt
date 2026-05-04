@@ -1,7 +1,14 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 /// The main entry point of `orchgpt`.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    #[cfg(feature = "cli")]
+    #[cfg(all(feature = "cli", feature = "net"))]
     {
         use autogpt::cli::orchgpt::Cli;
         use autogpt::common::utils::setup_logging;
@@ -27,3 +34,10 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
