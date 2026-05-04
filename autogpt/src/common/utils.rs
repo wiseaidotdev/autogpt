@@ -111,6 +111,7 @@ use gems::{
     traits::CTrait,
 };
 #[cfg(feature = "oai")]
+#[allow(unused_imports)]
 use openai_dive::v1::{
     api::Client as OpenAIClient,
     models::FlagshipModel,
