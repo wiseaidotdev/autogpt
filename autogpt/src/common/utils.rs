@@ -553,6 +553,7 @@ pub fn setup_logging() -> anyhow::Result<()> {
         .with_thread_ids(false)
         .with_target(false)
         .with_writer(std::io::stdout)
+        .with_ansi(true)
         .event_format(NoLevelFormatter)
         .with_filter(filter::LevelFilter::INFO);
 
