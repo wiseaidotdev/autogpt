@@ -568,14 +568,11 @@ impl DesignerGPT {
 
             #[cfg(feature = "xai")]
             ClientType::Xai(xai_client) => {
-                let messages = vec![XaiMessage {
-                    role: "user".into(),
-                    content: "What is in this image?".to_string(),
-                }];
+                let messages = vec![XaiMessage::text("user", "What is in this image?")];
 
                 let rb = ChatCompletionsRequestBuilder::new(
                     xai_client.clone(),
-                    "grok-beta".into(),
+                    "grok-4".into(),
                     messages,
                 )
                 .temperature(0.0)
@@ -586,7 +583,7 @@ impl DesignerGPT {
 
                 match resp {
                     Ok(chat) => {
-                        let response_text = chat.choices[0].message.content.clone();
+                        let response_text = chat.choices[0].message.content.to_string();
 
                         self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),

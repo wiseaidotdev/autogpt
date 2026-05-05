@@ -235,10 +235,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[cfg(feature = "xai")]
                     ClientType::Xai(xai_client) => {
-                        let messages = vec![XaiMessage {
-                            role: "user".into(),
-                            content: request.to_string(),
-                        }];
+                        let messages = vec![XaiMessage::text("user", request)];
 
                         let rb = ChatCompletionsRequestBuilder::new(
                             xai_client.clone(),
@@ -250,7 +247,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                         let req = rb.clone().build()?;
                         let chat = rb.create_chat_completion(req).await?;
-                        Ok(chat.choices[0].message.content.clone())
+                        Ok(chat.choices[0].message.content.to_string())
                     }
 
                     #[cfg(feature = "co")]

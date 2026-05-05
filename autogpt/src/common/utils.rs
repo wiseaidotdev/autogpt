@@ -691,7 +691,7 @@ impl Default for Model {
             feature = "xai"
         ))]
         {
-            return Model::Xai("grok-beta".to_string());
+            return Model::Xai("grok-4".to_string());
         }
 
         #[cfg(not(any(
@@ -768,10 +768,7 @@ impl Default for ProviderMessage {
             feature = "xai"
         ))]
         {
-            return ProviderMessage::Xai(XaiMessage {
-                role: "user".to_string(),
-                content: "Hello".to_string(),
-            });
+            return ProviderMessage::Xai(XaiMessage::text("user", "Hello"));
         }
 
         #[cfg(not(any(
