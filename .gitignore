@@ -22,3 +22,5 @@ logs/
 certs/
 
 .ipynb_checkpoints
+
+book/

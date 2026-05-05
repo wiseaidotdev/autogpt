@@ -1,0 +1,25 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  --sidebar-target-width: 290px;
+  --sidebar-width: 290px;
+}
+
+.nav-chapters {
+  min-width: 40px;
+}
+
+#searchresults a,
+.content a:link,
+a:visited,
+a > .hljs {
+  text-decoration: none;
+}
+
+iframe {
+  width: 80vw;
+  height: 100vh;
+  border: none;
+  overflow: hidden;
+  min-height: 100%;
+}
