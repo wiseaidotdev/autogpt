@@ -12,7 +12,7 @@ tokio = { version = "1.45.1", features = ["full"] }
 autogpt = { path = "../../autogpt", features = ["gem", "net"] }
 iac-rs = { path = "../../iac-rs" }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["std"] }
+tracing-subscriber = { version = "0.3.20", features = ["std"] }
 serde_json = { version = "1.0.140" }
 
 [profile.release]
