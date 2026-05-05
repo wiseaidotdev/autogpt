@@ -64,16 +64,23 @@ cargo run --all-features --bin autogpt
 
 ### 🐳 Using Docker
 
-Build the `orchgpt` Docker container:
+Install the [docker buildx plugin](https://docs.docker.com/build/concepts/overview/):
 
 ```sh
-docker build -f Dockerfile.orchgpt -t orchgpt .
+sudo apt-get update
+sudo apt-get install docker-buildx-plugin
+```
+
+Once installed, build the `orchgpt` Docker container using BuildKit:
+
+```sh
+docker buildx build -f Dockerfile.orchgpt -t orchgpt .
 ```
 
 Build the `autogpt` Docker container:
 
 ```sh
-docker build -f Dockerfile.autogpt -t autogpt .
+docker buildx build -f Dockerfile.autogpt -t autogpt .
 ```
 
 Run the `orchgpt` container:

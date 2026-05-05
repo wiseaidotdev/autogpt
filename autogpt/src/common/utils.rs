@@ -114,7 +114,7 @@ use gems::{
 #[allow(unused_imports)]
 use openai_dive::v1::{
     api::Client as OpenAIClient,
-    models::FlagshipModel,
+    models::Gpt4Model,
     resources::chat::{ChatMessage, ChatMessageContent},
 };
 
@@ -646,7 +646,7 @@ pub enum Model {
 
     /// OpenAI model.
     #[cfg(feature = "oai")]
-    OpenAI(FlagshipModel),
+    OpenAI(String),
 
     /// Google Gemini model.
     #[cfg(feature = "gem")]
@@ -675,7 +675,7 @@ impl Default for Model {
 
         #[cfg(all(not(any(feature = "gem", feature = "co")), feature = "oai"))]
         {
-            return Model::OpenAI(FlagshipModel::Gpt4O);
+            return Model::OpenAI("gpt-5".to_string());
         }
 
         #[cfg(all(
@@ -683,7 +683,7 @@ impl Default for Model {
             feature = "cld"
         ))]
         {
-            return Model::Claude("claude-3-7-sonnet-latest".to_string());
+            return Model::Claude("claude-opus-4-6".to_string());
         }
 
         #[cfg(all(

@@ -189,7 +189,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     #[cfg(feature = "oai")]
                     ClientType::OpenAI(oai_client) => {
                         let parameters = ChatCompletionParametersBuilder::default()
-                            .model(FlagshipModel::Gpt4O.to_string())
+                            .model(Gpt4Model::Gpt4O.to_string())
                             .messages(vec![ChatMessage::User {
                                 content: ChatMessageContent::Text(request.to_string()),
                                 name: None,
@@ -208,7 +208,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             ChatMessage::User { content, .. } => content.to_string(),
                             ChatMessage::System { content, .. } => content.to_string(),
                             ChatMessage::Developer { content, .. } => content.to_string(),
-                            ChatMessage::Tool { content, .. } => content.clone(),
+                            ChatMessage::Tool { content, .. } => content.to_string(),
                             _ => String::new(),
                         })
                     }
@@ -341,48 +341,288 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }
 
             async fn stream(&mut self, request: &str) -> Result<ReqResponse> {
+                let request_owned = request.to_string();
                 match &mut self.client {
                     #[cfg(feature = "gem")]
                     ClientType::Gemini(gem_client) => {
                         let parameters = StreamBuilder::default()
                             .model(Model::Flash3Preview)
                             .input(gems::messages::Message::User {
-                                content: Content::Text(request.into()),
+                                content: Content::Text(request_owned.clone()),
                                 name: None,
                             })
                             .build()?;
 
-                        Ok(ReqResponse(Some(gem_client.stream().generate(parameters).await?)))
+                        let resp = gem_client.stream().generate(parameters).await?;
+                        let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                        tokio::spawn(async move {
+                            let mut resp = resp;
+                            let mut buffer = String::new();
+
+                            while let Ok(Some(chunk)) = resp.chunk().await {
+                                if let Ok(text) = std::str::from_utf8(&chunk) {
+                                    buffer.push_str(text);
+                                    let mut parts: Vec<&str> =
+                                        buffer.split("\n\n").collect();
+                                    let new_buffer = if !buffer.ends_with("\n\n") {
+                                        parts.pop().unwrap_or("").to_string()
+                                    } else {
+                                        String::new()
+                                    };
+
+                                    for part in parts {
+                                        for line in part.lines() {
+                                            if let Some(data) =
+                                                line.strip_prefix("data: ")
+                                            {
+                                                let data = data.trim();
+                                                if data == "[DONE]" {
+                                                    continue;
+                                                }
+                                                if let Ok(json) =
+                                                    serde_json::from_str::<serde_json::Value>(data)
+                                                {
+                                                    if let Some(text) = json
+                                                        .get("candidates")
+                                                        .and_then(|c| c.get(0))
+                                                        .and_then(|c| c.get("content"))
+                                                        .and_then(|c| c.get("parts"))
+                                                        .and_then(|p| p.get(0))
+                                                        .and_then(|p| p.get("text"))
+                                                        .and_then(|t| t.as_str())
+                                                    {
+                                                        let _ = tx
+                                                            .send(text.to_string())
+                                                            .await;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    buffer = new_buffer;
+                                }
+                            }
+                        });
+
+                        Ok(ReqResponse(Some(rx)))
                     }
 
                     #[cfg(feature = "oai")]
                     ClientType::OpenAI(oai_client) => {
-                        // TODO: Implement this
-                        Ok(Default::default())
+                        let oai_client = oai_client.clone();
+                        let request_owned = request_owned.clone();
+                        let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                        tokio::spawn(async move {
+                            use futures::StreamExt;
+
+                            let parameters =
+                                ChatCompletionParametersBuilder::default()
+                                    .model("gpt-5")
+                                    .messages(vec![ChatMessage::User {
+                                        content: ChatMessageContent::Text(
+                                            request_owned,
+                                        ),
+                                        name: None,
+                                    }])
+                                    .build()
+                                    .unwrap();
+
+                            if let Ok(mut stream) =
+                                oai_client.chat().create_stream(parameters).await
+                            {
+                                while let Some(response) = stream.next().await {
+                                    match response {
+                                        Ok(chat_response) => {
+                                            for choice in chat_response.choices {
+                                                let text_opt = match &choice.delta {
+                                                    openai_dive::v1::resources::chat::DeltaChatMessage::Assistant {
+                                                        content: Some(
+                                                            openai_dive::v1::resources::chat::ChatMessageContent::Text(text),
+                                                        ),
+                                                        ..
+                                                    } => Some(text.clone()),
+                                                    openai_dive::v1::resources::chat::DeltaChatMessage::Untagged {
+                                                        content: Some(
+                                                            openai_dive::v1::resources::chat::ChatMessageContent::Text(text),
+                                                        ),
+                                                        ..
+                                                    } => Some(text.clone()),
+                                                    _ => None,
+                                                };
+                                                if let Some(t) = text_opt {
+                                                    let _ = tx.send(t).await;
+                                                }
+                                            }
+                                        }
+                                        Err(_) => break,
+                                    }
+                                }
+                            }
+                        });
+
+                        Ok(ReqResponse(Some(rx)))
                     }
 
                     #[cfg(feature = "cld")]
                     ClientType::Anthropic(client) => {
-                        // TODO: Implement this
-                        Ok(Default::default())
+                        let client = client.clone();
+                        let request_owned = request_owned.clone();
+                        let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                        tokio::spawn(async move {
+                            use futures::StreamExt;
+
+                            let body = CreateMessageParams::new(
+                                RequiredMessageParams {
+                                    model: "claude-opus-4-6".to_string(),
+                                    messages: vec![AnthMessage::new_text(
+                                        Role::User,
+                                        request_owned,
+                                    )],
+                                    max_tokens: 1024,
+                                },
+                            )
+                            .with_stream(true);
+
+                            if let Ok(mut stream) =
+                                client.create_message_streaming(&body).await
+                            {
+                                while let Some(event_result) = stream.next().await {
+                                    if let Ok(
+                                        anthropic_ai_sdk::types::message::StreamEvent::ContentBlockDelta {
+                                            delta,
+                                            ..
+                                        },
+                                    ) = event_result
+                                    {
+                                        if let anthropic_ai_sdk::types::message::ContentBlockDelta::TextDelta {
+                                            text,
+                                        } = delta
+                                        {
+                                            let _ = tx.send(text).await;
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        Ok(ReqResponse(Some(rx)))
                     }
 
                     #[cfg(feature = "xai")]
                     ClientType::Xai(xai_client) => {
-                        // TODO: Implement this
-                        Ok(Default::default())
+                        use x_ai::traits::ClientConfig;
+
+                        let messages =
+                            vec![XaiMessage::text("user", request_owned)];
+                        let req = ChatCompletionsRequestBuilder::new(
+                            xai_client.clone(),
+                            "grok-4".into(),
+                            messages,
+                        )
+                        .stream(true)
+                        .build()?;
+
+                        let resp = x_ai::traits::ClientConfig::request(
+                            &*xai_client,
+                            reqwest::Method::POST,
+                            "chat/completions",
+                        )
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to build xAI request: {}", e)
+                        })?
+                        .json(&req)
+                        .send()
+                        .await?;
+
+                        let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                        tokio::spawn(async move {
+                            let mut resp = resp;
+                            let mut buffer = String::new();
+
+                            while let Ok(Some(chunk)) = resp.chunk().await {
+                                if let Ok(text) = std::str::from_utf8(&chunk) {
+                                    buffer.push_str(text);
+                                    let mut parts: Vec<&str> =
+                                        buffer.split("\n\n").collect();
+                                    let new_buffer = if !buffer.ends_with("\n\n") {
+                                        parts.pop().unwrap_or("").to_string()
+                                    } else {
+                                        String::new()
+                                    };
+
+                                    for part in parts {
+                                        for line in part.lines() {
+                                            if let Some(data) =
+                                                line.strip_prefix("data: ")
+                                            {
+                                                let data = data.trim();
+                                                if data == "[DONE]" {
+                                                    continue;
+                                                }
+                                                if let Ok(json) =
+                                                    serde_json::from_str::<serde_json::Value>(data)
+                                                {
+                                                    if let Some(content) = json
+                                                        .get("choices")
+                                                        .and_then(|c| c.get(0))
+                                                        .and_then(|c| c.get("delta"))
+                                                        .and_then(|d| d.get("content"))
+                                                        .and_then(|c| c.as_str())
+                                                    {
+                                                        let _ = tx
+                                                            .send(content.to_string())
+                                                            .await;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    buffer = new_buffer;
+                                }
+                            }
+                        });
+
+                        Ok(ReqResponse(Some(rx)))
                     }
 
                     #[cfg(feature = "co")]
-                    ClientType::Cohere(_co_client) => {
-                        // TODO: Implement this
-                        Ok(Default::default())
+                    ClientType::Cohere(co_client) => {
+                        let chat_request = cohere_rust::api::chat::ChatRequest {
+                            message: request,
+                            ..Default::default()
+                        };
+                        let co_result = co_client.chat(&chat_request).await;
+                        let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                        if let Ok(mut receiver) = co_result {
+                            tokio::spawn(async move {
+                                while let Some(res) = receiver.recv().await {
+                                    if let Ok(resp) = res {
+                                        if let cohere_rust::api::chat::ChatStreamResponse::ChatTextGeneration {
+                                            text, ..
+                                        } = resp
+                                        {
+                                            let _ = tx.send(text).await;
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        Ok(ReqResponse(Some(rx)))
                     }
 
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
-                            "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                            "No valid AI client configured. \
+                             Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }

@@ -82,7 +82,7 @@ use {
     crate::common::memory::save_long_term_memory,
 };
 #[cfg(feature = "oai")]
-use {openai_dive::v1::models::FlagshipModel, openai_dive::v1::resources::chat::*};
+use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
 
 #[cfg(feature = "cld")]
 use anthropic_ai_sdk::types::message::{
