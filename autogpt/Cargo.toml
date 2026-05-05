@@ -39,34 +39,34 @@ derivative = { workspace = true }
 duckduckgo = { workspace = true }
 iac-rs = { workspace = true, optional = true }
 
-uuid = { version = "1.16.0", features = ["v4"] }
-tokio = { version = "1.37.0", default-features = false, features = ["full"] }
-reqwest = { version = "0.12.22", features = ["json"] }
-serde = { version = "1.0.197", features = ["derive"] }
+uuid = { version = "=1.23.1", features = ["v4"] }
+tokio = { version = "=1.52.2", default-features = false, features = ["full"] }
+reqwest = { version = "=0.12.22", features = ["json", "stream"] }
+serde = { version = "1.0.228", features = ["derive"] }
 gems = { version = "0.1.5", optional = true }
 getimg = { version = "0.0.1", optional = true }
 nylas = { version = "0.0.8", optional = true }
-clap = { version = "4.5.4", features = ["derive"], optional = true }
-tracing-subscriber = { version = "0.3.18", features = ["std", "env-filter", "fmt", "ansi"], optional = true }
-tracing-appender = { version = "0.2.4", optional = true }
-git2 = { version = "0.20.1", optional = true }
+clap = { version = "4.6.1", features = ["derive"], optional = true }
+tracing-subscriber = { version = "0.3.23", features = ["std", "env-filter", "fmt", "ansi"], optional = true }
+tracing-appender = { version = "0.2.5", optional = true }
+git2 = { version = "0.20.4", optional = true }
 pinecone-sdk = { version = "0.1.2", optional = true }
-openai_dive = { version = "=1.2.2", optional = true }
-anthropic-ai-sdk = { version = "0.2.24", optional = true }
+openai_dive = { version = "=1.4.2", optional = true, features = ["stream"] }
+anthropic-ai-sdk = { version = "=0.2.27", optional = true }
 x-ai = { version = "0.1.0", optional = true }
 cohere-rust = { version = "0.6.0", optional = true }
-indicatif = { version = "0.17.11", optional = true }
-console = { version = "0.16.0", optional = true }
-convert_case = { version = "0.8.0", optional = true }
+indicatif = { version = "0.18.4", optional = true }
+console = { version = "0.16.3", optional = true }
+convert_case = { version = "0.11.0", optional = true }
 serde_yaml = { version = "0.9.34", optional = true }
-toml_edit = { version = "0.23.0", optional = true }
-crates_io_api = { version = "0.11.0", optional = true }
-semver = { version = "1.0.26", optional = true }
-futures-util = { version = "0.3.31", optional = true }
-termimad = { version = "0.33.0", optional = true }
+toml_edit = { version = "0.23.9", optional = true }
+crates_io_api = { version = "0.12.0", optional = true }
+semver = { version = "1.0.28", optional = true }
+futures-util = { version = "0.3.32", optional = true }
+termimad = { version = "0.34.1", optional = true }
 dirs = { version = "6.0.0", optional = true }
 dialoguer = { version = "0.12.0", optional = true }
-bytes = "1.10.1"
+bytes = "1.11.1"
 
 [features]
 default = []

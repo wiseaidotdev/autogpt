@@ -267,21 +267,142 @@ async fn main() -> Result<()> {
                 }
 
                 #[cfg(feature = "oai")]
-                ClientType::OpenAI(_oai_client) => {
-                    // TODO: Implement streaming for OpenAI
-                    todo!("Implement me plz.");
+                ClientType::OpenAI(oai_client) => {
+                    use openai_dive::v1::resources::chat::{
+                        ChatCompletionParametersBuilder, ChatMessage, ChatMessageContent,
+                    };
+
+                    let parameters = ChatCompletionParametersBuilder::default()
+                        .model("gpt-5")
+                        .messages(vec![ChatMessage::User {
+                            content: ChatMessageContent::Text(prompt),
+                            name: None,
+                        }])
+                        .build()?;
+
+                    let mut stream = oai_client.chat().create_stream(parameters).await?;
+
+                    while let Some(response) = stream.next().await {
+                        match response {
+                            Ok(chat_response) => {
+                                chat_response.choices.iter().for_each(|choice| {
+                                    match &choice.delta {
+                                        openai_dive::v1::resources::chat::DeltaChatMessage::Assistant {
+                                            content: Some(openai_dive::v1::resources::chat::ChatMessageContent::Text(text)),
+                                            ..
+                                        } => type_with_cursor_effect(text, 1, &skin),
+                                        openai_dive::v1::resources::chat::DeltaChatMessage::Untagged {
+                                            content: Some(openai_dive::v1::resources::chat::ChatMessageContent::Text(text)),
+                                            ..
+                                        } => type_with_cursor_effect(text, 1, &skin),
+                                        _ => {}
+                                    }
+                                });
+                            }
+                            Err(e) => error!("OpenAI chat streaming failed: {}", e),
+                        }
+                    }
                 }
 
                 #[cfg(feature = "cld")]
-                ClientType::Anthropic(_client) => {
-                    // TODO: Implement streaming for Anthropic
-                    todo!("Implement me plz.");
+                ClientType::Anthropic(client) => {
+                    use anthropic_ai_sdk::types::message::MessageClient;
+                    use anthropic_ai_sdk::types::message::{
+                        ContentBlockDelta, CreateMessageParams, Message, RequiredMessageParams,
+                        Role, StreamEvent,
+                    };
+
+                    let body = CreateMessageParams::new(RequiredMessageParams {
+                        model: "claude-opus-4-6".to_string(),
+                        messages: vec![Message::new_text(Role::User, prompt.to_string())],
+                        max_tokens: 1024,
+                    })
+                    .with_stream(true);
+
+                    match client.create_message_streaming(&body).await {
+                        Ok(mut stream) => {
+                            while let Some(event_result) = stream.next().await {
+                                match event_result {
+                                    Ok(StreamEvent::ContentBlockDelta { delta, .. }) => {
+                                        if let ContentBlockDelta::TextDelta { text } = delta {
+                                            type_with_cursor_effect(&text, 1, &skin);
+                                        }
+                                    }
+                                    Ok(_) => {}
+                                    Err(e) => error!("Anthropic chat streaming failed: {}", e),
+                                }
+                            }
+                        }
+                        Err(e) => error!("Anthropic API failed to initiate stream: {}", e),
+                    }
                 }
 
                 #[cfg(feature = "xai")]
-                ClientType::Xai(_xai_client) => {
-                    // TODO: Implement streaming for Xai
-                    todo!("Implement me plz.");
+                ClientType::Xai(xai_client) => {
+                    use x_ai::chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage};
+                    use x_ai::traits::ClientConfig;
+
+                    let messages = vec![XaiMessage::text("user", prompt.to_string())];
+                    let req = ChatCompletionsRequestBuilder::new(
+                        xai_client.clone(),
+                        "grok-4".into(),
+                        messages,
+                    )
+                    .stream(true)
+                    .build()?;
+
+                    let response_stream_res = xai_client
+                        .request(reqwest::Method::POST, "chat/completions")
+                        .map_err(|e| anyhow!("Failed to build xAI request: {}", e))?
+                        .json(&req)
+                        .send()
+                        .await;
+
+                    match response_stream_res {
+                        Ok(mut resp) => {
+                            let mut buffer = String::new();
+
+                            while let Ok(Some(chunk)) = resp.chunk().await {
+                                if let Ok(text) = std::str::from_utf8(&chunk) {
+                                    buffer.push_str(text);
+                                    let mut parts: Vec<&str> = buffer.split("\n\n").collect();
+                                    let new_buffer = if !buffer.ends_with("\n\n") {
+                                        parts.pop().unwrap_or("").to_string()
+                                    } else {
+                                        String::new()
+                                    };
+
+                                    for part in parts {
+                                        for line in part.lines() {
+                                            if line.starts_with("data: ") {
+                                                let data = line.trim_start_matches("data: ").trim();
+                                                if data == "[DONE]" {
+                                                    continue;
+                                                }
+                                                if let Some(content) =
+                                                    serde_json::from_str::<serde_json::Value>(data)
+                                                        .ok()
+                                                        .and_then(|json| {
+                                                            json.get("choices")
+                                                                .and_then(|c| c.as_array())
+                                                                .and_then(|c| c.first())
+                                                                .and_then(|c| c.get("delta"))
+                                                                .and_then(|d| d.get("content"))
+                                                                .and_then(|c| c.as_str())
+                                                                .map(|s| s.to_string())
+                                                        })
+                                                {
+                                                    type_with_cursor_effect(&content, 1, &skin);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    buffer = new_buffer;
+                                }
+                            }
+                        }
+                        Err(e) => error!("xAI API request failed: {}", e),
+                    }
                 }
 
                 #[cfg(feature = "co")]

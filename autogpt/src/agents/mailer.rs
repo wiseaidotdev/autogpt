@@ -29,7 +29,7 @@ use {
     crate::common::memory::save_long_term_memory,
 };
 #[cfg(feature = "oai")]
-use {openai_dive::v1::models::FlagshipModel, openai_dive::v1::resources::chat::*};
+use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
 
 #[cfg(feature = "cld")]
 use anthropic_ai_sdk::types::message::{
@@ -264,7 +264,7 @@ impl MailerGPT {
             #[cfg(feature = "oai")]
             ClientType::OpenAI(oai_client) => {
                 let parameters = ChatCompletionParametersBuilder::default()
-                    .model(FlagshipModel::Gpt4O.to_string())
+                    .model(Gpt4Model::Gpt4O.to_string())
                     .messages(vec![ChatMessage::User {
                         content: ChatMessageContent::Text(format!(
                             "User Request:{prompt}\n\nEmails:{emails:?}"
@@ -288,7 +288,7 @@ impl MailerGPT {
                             ChatMessage::User { content, .. } => content.to_string(),
                             ChatMessage::System { content, .. } => content.to_string(),
                             ChatMessage::Developer { content, .. } => content.to_string(),
-                            ChatMessage::Tool { content, .. } => content.clone(),
+                            ChatMessage::Tool { content, .. } => content.to_string(),
                             _ => String::from(""),
                         }
                     }

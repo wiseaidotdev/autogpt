@@ -66,7 +66,7 @@ pub use {
 };
 
 #[cfg(feature = "oai")]
-pub use {openai_dive::v1::models::FlagshipModel, openai_dive::v1::resources::chat::*};
+pub use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
 
 #[cfg(feature = "cld")]
 pub use anthropic_ai_sdk::types::message::{

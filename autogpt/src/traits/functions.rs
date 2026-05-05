@@ -150,10 +150,10 @@ use crate::common::utils::Message;
 use crate::common::utils::{AgentMessage, Task};
 use anyhow::Result;
 use async_trait::async_trait;
-use reqwest::Response;
+use tokio::sync::mpsc::Receiver;
 
 #[derive(Default)]
-pub struct ReqResponse(pub Option<Response>);
+pub struct ReqResponse(pub Option<Receiver<String>>);
 
 /// Trait to retrieve an agent.
 pub trait Functions {
