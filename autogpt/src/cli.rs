@@ -6,8 +6,12 @@
 // except according to those terms.
 
 pub mod autogpt;
+#[cfg(feature = "cli")]
+pub mod models;
 pub mod orchgpt;
 #[cfg(feature = "cli")]
 pub mod session;
+#[cfg(feature = "cli")]
+pub mod skills;
 #[cfg(feature = "cli")]
 pub mod tui;

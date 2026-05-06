@@ -92,7 +92,7 @@ use {
     crates_io_api::AsyncClient,
     semver::Version,
     std::io::Write,
-    tracing::{Event, Subscriber, error, info, warn},
+    tracing::{Event, Subscriber, error, field, info, warn},
     tracing_appender::rolling,
     tracing_subscriber::Layer,
     tracing_subscriber::Registry,
@@ -532,17 +532,32 @@ where
 {
     fn format_event(
         &self,
-        ctx: &FmtContext<'_, S, N>,
+        _ctx: &FmtContext<'_, S, N>,
         mut writer: fmt::format::Writer<'_>,
         event: &Event<'_>,
     ) -> std::fmt::Result {
-        ctx.format_fields(writer.by_ref(), event)?;
+        struct MessageVisitor<'a, 'w>(&'a mut fmt::format::Writer<'w>);
+        impl<'a, 'w> field::Visit for MessageVisitor<'a, 'w> {
+            fn record_debug(&mut self, field: &field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    let _ = write!(self.0, "{:?}", value);
+                }
+            }
+            fn record_str(&mut self, field: &field::Field, value: &str) {
+                if field.name() == "message" {
+                    let _ = write!(self.0, "{}", value);
+                }
+            }
+        }
+        let mut visitor = MessageVisitor(&mut writer);
+        event.record(&mut visitor);
         writeln!(writer)
     }
 }
 
 #[cfg(feature = "cli")]
 pub fn setup_logging() -> anyhow::Result<()> {
+    colored::control::set_override(true);
     let file_appender = rolling::daily("logs", "autogpt_log");
 
     let console_layer = fmt::Layer::new()

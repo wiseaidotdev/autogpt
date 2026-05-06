@@ -20,14 +20,8 @@ use tracing::{error, info, warn};
 #[cfg(feature = "cli")]
 const BOX_WIDTH: usize = 80;
 
-/// Available model entry for the model selector.
 #[cfg(feature = "cli")]
-#[derive(Debug, Clone)]
-pub struct ModelEntry {
-    pub id: String,
-    pub display_name: String,
-    pub description: String,
-}
+pub use crate::cli::models::ProviderModel;
 
 /// Status variants for task progress indicators.
 #[cfg(feature = "cli")]
@@ -183,7 +177,7 @@ pub fn render_help_table() {
 ///
 /// Uses `dialoguer::Select` for a terminal-native selection UI with keyboard navigation.
 #[cfg(feature = "cli")]
-pub fn render_model_selector(models: &[ModelEntry], current_idx: usize) -> usize {
+pub fn render_model_selector(models: &[ProviderModel], current_idx: usize) -> usize {
     use dialoguer::{Select, theme::ColorfulTheme};
 
     info!("");
@@ -194,10 +188,11 @@ pub fn render_model_selector(models: &[ModelEntry], current_idx: usize) -> usize
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            if i == current_idx {
-                format!("● {} - {}", m.display_name, m.description)
+            let bullet = if i == current_idx { "●" } else { " " };
+            if m.description.is_empty() {
+                format!("{} {}", bullet, m.display_name)
             } else {
-                format!("  {} - {}", m.display_name, m.description)
+                format!("{} {} - {}", bullet, m.display_name, m.description)
             }
         })
         .collect();

@@ -343,13 +343,21 @@ To configure the CLI and or the SDK environment, follow these steps:
 
    This tells the orchestrator to bind to `127.0.0.1` on port `9443` instead of the default.
 
-1. **Define Workspace Path**: Set up the paths for designer, backend, frontend, and architect workspaces by setting the following environment variable:
+1. **Define Workspace Path**: GenericGPT defaults to the **current directory** where the CLI is launched as its workspace. Set this to an explicit path when you want generated files scoped to a fixed location:
 
    ```sh
    export AUTOGPT_WORKSPACE=workspace/
    ```
 
-   This variable guide the agents on where to generate the code within your project structure.
+   For the classic multi-agent workflow (BackendGPT, FrontendGPT, etc.), agents write to subdirectories of the configured root:
+
+   ```
+   <AUTOGPT_WORKSPACE>/
+   ├── architect/
+   ├── backend/
+   ├── frontend/
+   └── designer/
+   ```
 
 1. **AI Provider Selection**: You can control which AI client is initialized at runtime using the `AI_PROVIDER` environment variable.
    - `gemini` - Initializes the Gemini client (**requires** the `gem` feature). This is the **default** if `AI_PROVIDER` is not set.
@@ -377,13 +385,33 @@ To configure the CLI and or the SDK environment, follow these steps:
 
    Make sure to enable the corresponding Cargo features (`gem`, `oai`, `xai`, `cld`, or `co`) when building your project.
 
-1. **API Key Configuration**: Additionally, you need to set up the Gemini API key by setting the following environment variable:
+1. **API Key Configuration**: Set the API key for your chosen provider:
 
    ```sh
+   # Gemini (default)
    export GEMINI_API_KEY=<your_gemini_api_key>
+
+   # OpenAI
+   export OPENAI_API_KEY=<your_openai_api_key>
+
+   # Anthropic Claude
+   export ANTHROPIC_API_KEY=<your_anthropic_api_key>
+
+   # XAI Grok
+   export XAI_API_KEY=<your_xai_api_key>
+
+   # Cohere
+   export COHERE_API_KEY=<your_cohere_api_key>
    ```
 
-   To obtain your API key, navigate to [Google AI Studio](https://aistudio.google.com/app/apikey) and generate it there. This key allows autogpt to communicate with Gemini API.
+   Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+1. **Model Override (Optional)**: Override the default model for any provider using provider-specific env vars or the global fallback:
+
+   ```sh
+   export GEMINI_MODEL=gemini-2.5-pro-preview-05-06
+   export OPENAI_MODEL=gpt-4o
+   ```
 
 1. **DesignerGPT Setup (Optional)**: To enable DesignerGPT, you will need to set up the following environment variable:
 

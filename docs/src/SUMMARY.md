@@ -18,6 +18,7 @@
 # Built-in Agents
 
 - [Overview](./agents/overview.md)
+- [GenericGPT](./agents/generic-gpt.md)
 - [ManagerGPT](./agents/manager-gpt.md)
 - [ArchitectGPT](./agents/architect-gpt.md)
 - [BackendGPT](./agents/backend-gpt.md)

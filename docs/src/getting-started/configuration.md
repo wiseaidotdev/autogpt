@@ -7,7 +7,7 @@ AutoGPT is configured entirely through environment variables, no config files re
 | Variable               | Required | Default        | Description                                                           |
 | ---------------------- | -------- | -------------- | --------------------------------------------------------------------- |
 | `AI_PROVIDER`          | No       | `gemini`       | Active LLM provider: `gemini`, `openai`, `anthropic`, `xai`, `cohere` |
-| `AUTOGPT_WORKSPACE`    | No       | `workspace/`   | Directory where agents write generated files                          |
+| `AUTOGPT_WORKSPACE`    | No       | `.` (cwd)      | Workspace root where agents write generated files                     |
 | `ORCHESTRATOR_ADDRESS` | CLI only | `0.0.0.0:8443` | TCP address the orchestrator listens on                               |
 
 ## LLM Provider API Keys
@@ -18,30 +18,43 @@ Configure the key for your chosen provider. Only the key matching your `AI_PROVI
 # Gemini (default), requires feature: gem
 export AI_PROVIDER=gemini
 export GEMINI_API_KEY=<your_gemini_api_key>
-export GEMINI_MODEL=<your_gemini_model>
+
+# Override the Gemini model (otherwise uses first in provider list)
+export GEMINI_MODEL=gemini-2.5-pro-preview-05-06
 
 # OpenAI, requires feature: oai
 export AI_PROVIDER=openai
 export OPENAI_API_KEY=<your_openai_api_key>
+export OPENAI_MODEL=gpt-4o   # optional override
 
 # Anthropic Claude, requires feature: cld
 export AI_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=<your_anthropic_api_key>
+export ANTHROPIC_MODEL=claude-opus-4-6   # optional override
 
 # XAI Grok, requires feature: xai
 export AI_PROVIDER=xai
 export XAI_API_KEY=<your_xai_api_key>
+export XAI_MODEL=grok-4   # optional override
 
 # Cohere, requires feature: co
 export AI_PROVIDER=cohere
 export COHERE_API_KEY=<your_cohere_api_key>
+export COHERE_MODEL=command-r-plus   # optional override
 ```
 
 Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/api-keys). Keys for other providers are available on their respective developer portals.
 
 ## Workspace
 
-The workspace variable controls where agents write code artifacts. By default all agents write to subdirectories of `workspace/`:
+GenericGPT defaults to the **current directory** where the CLI is launched as its workspace. Set `AUTOGPT_WORKSPACE` to override:
+
+```sh
+export AUTOGPT_WORKSPACE=/my/project
+autogpt          # file operations are scoped to /my/project
+```
+
+For the classic multi-agent workflow (BackendGPT, FrontendGPT, etc.), all agents write to subdirectories:
 
 ```
 workspace/
@@ -51,11 +64,22 @@ workspace/
 └── designer/    # DesignerGPT: image assets
 ```
 
-Override the workspace root:
+## The `.autogpt` Directory
 
-```sh
-export AUTOGPT_WORKSPACE=/my/project/workspace/
+GenericGPT maintains persistent state in a hidden directory inside the active workspace:
+
 ```
+.autogpt/
+├── sessions/               # Saved conversation sessions (YAML)
+│   ├── <uuid>.yaml
+│   └── ...
+└── skills/                 # Learned lessons, injected on future sessions (TOML)
+    ├── rust.toml
+    ├── web.toml
+    └── python.toml
+```
+
+Lesson files are plain TOML and can be viewed or manually edited. See the [GenericGPT agent documentation](../agents/generic-gpt.md) for details.
 
 ## Orchestrator Address
 

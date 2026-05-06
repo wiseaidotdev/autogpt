@@ -93,6 +93,8 @@ pub struct Session {
     pub plan: Option<String>,
     pub walkthrough: Option<String>,
     pub workspace: String,
+    pub reasoning_log: Vec<String>,
+    pub build_attempts: u8,
 }
 
 #[cfg(feature = "cli")]
@@ -114,7 +116,19 @@ impl Session {
             plan: None,
             walkthrough: None,
             workspace: workspace.to_string(),
+            reasoning_log: Vec::new(),
+            build_attempts: 0,
         }
+    }
+
+    pub fn add_reasoning(&mut self, thought: &str) {
+        self.reasoning_log.push(thought.to_string());
+        self.updated_at = Utc::now();
+    }
+
+    pub fn increment_build_attempt(&mut self) {
+        self.build_attempts = self.build_attempts.saturating_add(1);
+        self.updated_at = Utc::now();
     }
 
     pub fn add_message(&mut self, role: &str, content: &str) {
@@ -219,6 +233,17 @@ impl SessionManager {
 
         if !session.tasks.is_empty() {
             fs::write(dir.join("tasks.md"), Self::render_tasks_md(&session.tasks))?;
+        }
+
+        if !session.reasoning_log.is_empty() {
+            let reasoning_md = session
+                .reasoning_log
+                .iter()
+                .enumerate()
+                .map(|(i, t)| format!("## Task {} Reasoning\n\n{}\n", i + 1, t))
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(dir.join("reasoning_log.md"), reasoning_md)?;
         }
 
         Ok(())
