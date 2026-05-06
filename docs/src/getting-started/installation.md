@@ -28,8 +28,8 @@ Download the latest pre-built executables directly from GitHub Releases without 
 
 | Platform       | Download                                                                                    |
 | -------------- | ------------------------------------------------------------------------------------------- |
-| Linux x86-64   | [autogpt](https://github.com/wiseaidotdev/autogpt/releases/download/v0.2.0/autogpt)         |
-| Windows x86-64 | [autogpt.exe](https://github.com/wiseaidotdev/autogpt/releases/download/v0.2.0/autogpt.exe) |
+| Linux x86-64   | [autogpt](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.0/autogpt)         |
+| Windows x86-64 | [autogpt.exe](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.0/autogpt.exe) |
 
 ## Using Docker
 
@@ -42,7 +42,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<your_pinecone_api_key> \
   -e PINECONE_INDEX_URL=<your_pinecone_index_url> \
-  --rm --name autogpt kevinrsdev/autogpt:0.2.0
+  --rm --name autogpt kevinrsdev/autogpt:0.3.0
 ```
 
 **OrchGPT orchestrator container:**
@@ -52,7 +52,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<your_pinecone_api_key> \
   -e PINECONE_INDEX_URL=<your_pinecone_index_url> \
-  --rm --name orchgpt kevinrsdev/orchgpt:0.2.0
+  --rm --name orchgpt kevinrsdev/orchgpt:0.3.0
 ```
 
 ## Build from Source

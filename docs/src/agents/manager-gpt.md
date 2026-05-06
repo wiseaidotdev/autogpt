@@ -1,6 +1,6 @@
 # ManagerGPT
 
-<span class="badge badge-orange">Feature: gpt</span> <span class="badge badge-gray">CLI: autogpt manage</span>
+<span class="badge badge-orange">Feature: gpt</span> <span class="badge badge-gray">CLI: autogpt man</span>
 
 ManagerGPT is the top-level orchestrator in the AutoGPT agent mesh. It receives a high-level project goal, decomposes it into discrete subtasks, assigns each subtask to the appropriate specialist agent, and consolidates their outputs into a coherent final result.
 
@@ -33,7 +33,7 @@ ManagerGPT communicates its decomposed subtasks to each agent by constructing sp
 ## CLI Usage
 
 ```sh
-autogpt manage
+autogpt man
 ```
 
 AutoGPT prompts for your project goal interactively. For example:

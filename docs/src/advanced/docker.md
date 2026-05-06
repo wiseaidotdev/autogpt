@@ -6,8 +6,8 @@ AutoGPT ships two Docker images: `kevinrsdev/autogpt` for the agent binary and `
 
 | Image                | Tag     | Size   | Purpose                |
 | -------------------- | ------- | ------ | ---------------------- |
-| `kevinrsdev/autogpt` | `0.2.0` | ~12 MB | `autogpt` agent CLI    |
-| `kevinrsdev/orchgpt` | `0.2.0` | ~12 MB | `orchgpt` orchestrator |
+| `kevinrsdev/autogpt` | `0.3.0` | ~12 MB | `autogpt` agent CLI    |
+| `kevinrsdev/orchgpt` | `0.3.0` | ~12 MB | `orchgpt` orchestrator |
 
 Both images are Alpine-based and stripped of debug symbols for minimal footprint.
 
@@ -19,7 +19,7 @@ docker run -it \
   -e AUTOGPT_WORKSPACE=/workspace \
   -v $(pwd)/workspace:/workspace \
   --rm --name autogpt \
-  kevinrsdev/autogpt:0.2.0
+  kevinrsdev/autogpt:0.3.0
 ```
 
 The `-v` flag mounts a local directory so generated files persist after the container exits.
@@ -31,7 +31,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_key> \
   -p 8443:8443 \
   --rm --name orchgpt \
-  kevinrsdev/orchgpt:0.2.0
+  kevinrsdev/orchgpt:0.3.0
 ```
 
 ## Docker Compose (Recommended)

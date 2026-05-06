@@ -80,22 +80,22 @@ AutoGPT supports 4 modes of operation: interactive, direct prompt, standalone ag
 
 ### 0. 🤖 GenericGPT Interactive Mode (Default)
 
-When you run `autogpt` with **no subcommand or flags**, it launches an interactive AI shell powered by **GenericGPT**: a fully-fledged conversational agent with session management, model switching, and multi-provider support:
+When you run `autogpt` with **no subcommand or flags**, it launches an interactive AI shell powered by **GenericGPT**, a production-hardened autonomous software engineering agent with session persistence, model switching, and multi-provider support:
 
 ```sh
 autogpt
 ```
 
-<video src="https://github.com/user-attachments/assets/61dc0840-64ce-488f-a20f-7c408eb67461"></video>
+<video src="https://github.com/user-attachments/assets/5fa7fc2e-b926-48db-bf55-73eb1c8a1601"></video>
 
 The interactive shell supports the following commands:
 
 | Command         | Description                                                 |
 | --------------- | ----------------------------------------------------------- |
-| `<your prompt>` | Send a message to the active AI agent                       |
+| `<your prompt>` | Send a task to the GenericGPT autonomous agent              |
 | `/help`         | Show available commands                                     |
 | `/provider`     | Switch AI provider (Gemini, OpenAI, Anthropic, XAI, Cohere) |
-| `/models`       | Browse and switch between supported models                  |
+| `/models`       | Browse and switch between provider-native models            |
 | `/sessions`     | List and resume previous sessions                           |
 | `/status`       | Show current model, provider, and directory                 |
 | `/workspace`    | Show the current workspace path                             |
@@ -103,6 +103,62 @@ The interactive shell supports the following commands:
 | `exit` / `quit` | Save session and quit                                       |
 
 > Press `ESC` at any time to interrupt a running generation.
+
+### The `.autogpt` Directory
+
+GenericGPT maintains all persistent state inside the workspace root (defaults to the **current directory**):
+
+```
+.autogpt/
+├── sessions/          # YAML conversation snapshots, auto-saved after every response
+│   ├── <uuid>.yaml
+│   └── ...
+└── skills/            # TOML lesson files, injected into future prompts automatically
+    ├── rust.toml
+    ├── web.toml
+    └── python.toml
+```
+
+Control the workspace root with `AUTOGPT_WORKSPACE`:
+
+```sh
+export AUTOGPT_WORKSPACE=/my/project   # scope all file ops to a specific directory
+autogpt
+```
+
+### Model Selection
+
+Models are sourced dynamically from each provider's crate, no hardcoded strings. Override the active model without entering the shell:
+
+```sh
+export GEMINI_MODEL=gemini-2.5-pro-preview-05-06
+export OPENAI_MODEL=gpt-4o
+export MODEL=<any-model-id>    # global fallback for any provider
+```
+
+### How GenericGPT Works
+
+Each prompt goes through a six-step pipeline:
+
+1. **Reasoning**: structured internal monologue stored in the session log.
+2. **Task synthesis**: decomposition into typed actions (`CreateFile`, `PatchFile`, `RunCommand`, ...).
+3. **Execution**: surgical file edits via `PatchFile`; shell execution via `RunCommand`.
+4. **Build-and-verify**: auto-detects `Cargo.toml` / `package.json` / `Makefile` and runs the build; retries on failure up to 3 times.
+5. **Reflection**: reviews outcomes and lesson candidates.
+6. **Skill extraction**: lessons written to `.autogpt/skills/<domain>.toml` and injected in future sessions.
+
+```mermaid
+flowchart TD
+    A([User enters prompt]) --> B[Reasoning pre-step]
+    B --> C[Task synthesis]
+    C --> D{User approves?}
+    D -- yolo mode / yes --> E[Execute actions]
+    E --> G[Build-and-verify loop]
+    G -- pass --> H[Reflection]
+    G -- fail, retry ≤3 --> E
+    H --> I[Save skills & session]
+    I --> K([Ready for next prompt])
+```
 
 ```mermaid
 flowchart TD

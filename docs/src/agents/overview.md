@@ -4,17 +4,17 @@ AutoGPT 0.2 ships with **9 built-in autonomous agents**, each specializing in a 
 
 ## Agent Roster
 
-| Agent          | Feature Flag | CLI Subcommand             | Role                                    |
-| -------------- | ------------ | -------------------------- | --------------------------------------- |
-| `GenericGPT`   | `cli`        | _(default, no subcommand)_ | General-purpose conversational AI shell |
-| `ManagerGPT`   | `gpt`        | `autogpt manage`           | Task orchestration across all agents    |
-| `ArchitectGPT` | `gpt`        | `autogpt arch`             | System architecture diagram generation  |
-| `BackendGPT`   | `gpt`        | `autogpt back`             | Backend source code generation          |
-| `FrontendGPT`  | `gpt`        | `autogpt front`            | Frontend UI code generation             |
-| `DesignerGPT`  | `img`        | `autogpt design`           | AI image and UI mockup generation       |
-| `GitGPT`       | `git`        | _(automatic)_              | Atomic Git commits from agent output    |
-| `MailerGPT`    | `mail`       | _(SDK only)_               | Email reading and automated sending     |
-| `OptimizerGPT` | `gpt`        | _(SDK only)_               | Codebase modularization and refactoring |
+| Agent          | Feature Flag | CLI Subcommand             | Role                                                                  |
+| -------------- | ------------ | -------------------------- | --------------------------------------------------------------------- |
+| `GenericGPT`   | `cli`        | _(default, no subcommand)_ | Autonomous software engineering: reasons, edits files, builds, learns |
+| `ManagerGPT`   | `gpt`        | `autogpt man`              | Task orchestration across all agents                                  |
+| `ArchitectGPT` | `gpt`        | `autogpt arch`             | System architecture diagram generation                                |
+| `BackendGPT`   | `gpt`        | `autogpt back`             | Backend source code generation                                        |
+| `FrontendGPT`  | `gpt`        | `autogpt front`            | Frontend UI code generation                                           |
+| `DesignerGPT`  | `img`        | `autogpt design`           | AI image and UI mockup generation                                     |
+| `GitGPT`       | `git`        | _(automatic)_              | Atomic Git commits from agent output                                  |
+| `MailerGPT`    | `mail`       | _(SDK only)_               | Email reading and automated sending                                   |
+| `OptimizerGPT` | `gpt`        | _(SDK only)_               | Codebase modularization and refactoring                               |
 
 ## Agent Architecture
 

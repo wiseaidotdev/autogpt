@@ -10,7 +10,7 @@ In Standalone Mode you run a single specialized agent directly via a CLI subcomm
 | `autogpt back`   | BackendGPT   | Generate backend source code         |
 | `autogpt front`  | FrontendGPT  | Generate frontend UI code            |
 | `autogpt design` | DesignerGPT  | Generate UI design images            |
-| `autogpt manage` | ManagerGPT   | Orchestrate all other agents locally |
+| `autogpt man`    | ManagerGPT   | Orchestrate all other agents locally |
 
 ## Example: Architecture Diagram
 
