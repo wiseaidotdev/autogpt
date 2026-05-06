@@ -81,5 +81,5 @@ cargo build --release --features net,cli --bin orchgpt
 docker run -it \
   -e GEMINI_API_KEY=<key> \
   -p 8443:8443 \
-  --rm --name orchgpt kevinrsdev/orchgpt:0.3.0
+  --rm --name orchgpt kevinrsdev/orchgpt
 ```

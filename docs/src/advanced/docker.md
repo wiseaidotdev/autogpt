@@ -19,7 +19,7 @@ docker run -it \
   -e AUTOGPT_WORKSPACE=/workspace \
   -v $(pwd)/workspace:/workspace \
   --rm --name autogpt \
-  kevinrsdev/autogpt:0.3.0
+  kevinrsdev/autogpt
 ```
 
 The `-v` flag mounts a local directory so generated files persist after the container exits.
@@ -31,7 +31,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_key> \
   -p 8443:8443 \
   --rm --name orchgpt \
-  kevinrsdev/orchgpt:0.3.0
+  kevinrsdev/orchgpt
 ```
 
 ## Docker Compose (Recommended)

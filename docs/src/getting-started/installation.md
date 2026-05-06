@@ -42,7 +42,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<your_pinecone_api_key> \
   -e PINECONE_INDEX_URL=<your_pinecone_index_url> \
-  --rm --name autogpt kevinrsdev/autogpt:0.3.0
+  --rm --name autogpt kevinrsdev/autogpt
 ```
 
 **OrchGPT orchestrator container:**
@@ -52,7 +52,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<your_pinecone_api_key> \
   -e PINECONE_INDEX_URL=<your_pinecone_index_url> \
-  --rm --name orchgpt kevinrsdev/orchgpt:0.3.0
+  --rm --name orchgpt kevinrsdev/orchgpt
 ```
 
 ## Build from Source

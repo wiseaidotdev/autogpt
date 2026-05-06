@@ -21,7 +21,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<Your_Pinecone_API_Key> \
   -e PINECONE_INDEX_URL=<Your_Pinecone_Index_URL> \
-  --rm --name autogpt kevinrsdev/autogpt:0.3.0 man
+  --rm --name autogpt kevinrsdev/autogpt man
 ```
 
 To install and run the OrchGPT CLI via Docker, use the following command:
@@ -31,7 +31,7 @@ docker run -it \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<Your_Pinecone_API_Key> \
   -e PINECONE_INDEX_URL=<Your_Pinecone_Index_URL> \
-  --rm --name orchgpt kevinrsdev/orchgpt:0.3.0
+  --rm --name orchgpt kevinrsdev/orchgpt
 ```
 
 ## 📦 Build From Source
@@ -351,7 +351,7 @@ To configure the CLI and or the SDK environment, follow these steps:
 
    For the classic multi-agent workflow (BackendGPT, FrontendGPT, etc.), agents write to subdirectories of the configured root:
 
-   ```
+   ```sh
    <AUTOGPT_WORKSPACE>/
    ├── architect/
    ├── backend/
@@ -514,7 +514,7 @@ docker run -i \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<Your_Pinecone_API_Key> \
   -e PINECONE_INDEX_URL=<Your_Pinecone_Index_URL> \
-  -t kevinrsdev/orchgpt:0.3.0
+  -t kevinrsdev/orchgpt
 ```
 
 You can also run AutoGPT CLI using Docker:
@@ -524,7 +524,7 @@ docker run -i \
   -e GEMINI_API_KEY=<your_gemini_api_key> \
   -e PINECONE_API_KEY=<Your_Pinecone_API_Key> \
   -e PINECONE_INDEX_URL=<Your_Pinecone_Index_URL> \
-  --rm --name autogpt kevinrsdev/autogpt:0.3.0
+  --rm --name autogpt kevinrsdev/autogpt
 ```
 
 ---
