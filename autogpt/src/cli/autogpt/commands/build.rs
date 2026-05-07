@@ -8,7 +8,7 @@
 use crate::cli::autogpt::{generator::generate_code, parser::parse_yaml, utils::*};
 use anyhow::Result;
 use std::path::Path;
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 
 pub fn handle_build(out: Option<String>) -> Result<()> {
     let config = parse_yaml("agent.yaml")?;
@@ -24,7 +24,7 @@ pub fn handle_build(out: Option<String>) -> Result<()> {
     success("✅ Code generation complete");
 
     spinner("Compiling agent", || {
-        std::process::Command::new("cargo")
+        Command::new("cargo")
             .arg("build")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

@@ -56,9 +56,9 @@ The selected provider must have its API key set as an environment variable and i
 
 ## Switching Models
 
-`/models` lists all models available from the active provider, sourced directly from each provider's crate, no hardcoded strings. Use arrow keys to navigate and `Enter` to confirm:
+`/models` lists all models available from the active provider, sourced directly from each provider's crate. Use arrow keys to navigate and `Enter` to confirm:
 
-```
+```sh
 > /models
 ─────────────────────────────────────────────────────────────
   ● Flash3Preview

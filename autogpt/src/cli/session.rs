@@ -10,6 +10,8 @@ use chrono::{DateTime, Utc};
 #[cfg(feature = "cli")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "cli")]
+use std::cmp;
+#[cfg(feature = "cli")]
 use std::fs;
 #[cfg(feature = "cli")]
 use std::path::PathBuf;
@@ -169,6 +171,74 @@ impl Session {
         self.walkthrough = Some(walkthrough.to_string());
         self.updated_at = Utc::now();
     }
+
+    /// Produces a compact, token-efficient summary of the session's prior state.
+    ///
+    /// The output is injected into `{HISTORY}` and `{PREVIOUS_CONTEXT}` placeholders in
+    /// follow-up prompts so the LLM knows exactly what was already built without receiving
+    /// the full, potentially large session JSON. Capped at roughly 1200 tokens.
+    pub fn session_context_summary(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+
+        parts.push(format!("## Prior Session: {}", self.title));
+        parts.push(format!("Workspace: {}", self.workspace));
+
+        if !self.tasks.is_empty() {
+            let task_lines: Vec<String> = self
+                .tasks
+                .iter()
+                .enumerate()
+                .map(|(i, t)| format!("  {}. [{}] {}", i + 1, t.status.as_str(), t.description))
+                .collect();
+            parts.push(format!("Tasks completed:\n{}", task_lines.join("\n")));
+        }
+
+        if !self.files_created.is_empty() {
+            let file_lines: Vec<String> = self
+                .files_created
+                .iter()
+                .take(30)
+                .map(|f| format!("  - {} ({})", f.path, f.action))
+                .collect();
+            let suffix = if self.files_created.len() > 30 {
+                format!("\n  … and {} more", self.files_created.len() - 30)
+            } else {
+                String::new()
+            };
+            parts.push(format!(
+                "Files created:\n{}{}",
+                file_lines.join("\n"),
+                suffix
+            ));
+        }
+
+        if let Some(ref plan) = self.plan {
+            let excerpt: String = plan.lines().take(20).collect::<Vec<_>>().join("\n");
+            parts.push(format!("Implementation plan (excerpt):\n{excerpt}"));
+        }
+
+        let last_messages: Vec<String> = self
+            .messages
+            .iter()
+            .rev()
+            .take(6)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|m| {
+                let snippet: String = m.content.chars().take(200).collect();
+                format!("[{}]: {}", m.role, snippet)
+            })
+            .collect();
+        if !last_messages.is_empty() {
+            parts.push(format!(
+                "Recent conversation:\n{}",
+                last_messages.join("\n")
+            ));
+        }
+
+        parts.join("\n\n")
+    }
 }
 
 /// A lightweight summary entry for listing available sessions.
@@ -292,7 +362,7 @@ impl SessionManager {
             }
         }
 
-        entries.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
+        entries.sort_by_key(|b| cmp::Reverse(b.updated_at));
         Ok(entries)
     }
 

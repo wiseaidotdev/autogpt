@@ -9,7 +9,7 @@ use crate::common::utils::{AgentMessage, Task};
 use crate::traits::functions::Collaborate;
 use anyhow::Result;
 use async_trait::async_trait;
-use iac_rs::prelude::*;
+use iac_rs::prelude::{self, *};
 use serde_json;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -69,7 +69,7 @@ impl Collaborate for RemoteAgent {
     async fn handle_task(&mut self, task: Task) -> Result<()> {
         let msg = AgentMessage::Task(task);
 
-        let mut message = iac_rs::prelude::Message {
+        let mut message = prelude::Message {
             from: "AgentGPT".into(),
             to: self.id.clone().into(),
             msg_type: MessageType::DelegateTask,

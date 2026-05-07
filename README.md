@@ -86,7 +86,7 @@ When you run `autogpt` with **no subcommand or flags**, it launches an interacti
 autogpt
 ```
 
-<video src="https://github.com/user-attachments/assets/5fa7fc2e-b926-48db-bf55-73eb1c8a1601"></video>
+<video src="https://github.com/user-attachments/assets/55a28c1a-eba2-4c94-aee1-2661cbeaabc6"></video>
 
 The interactive shell supports the following commands:
 
@@ -128,7 +128,7 @@ autogpt
 
 ### Model Selection
 
-Models are sourced dynamically from each provider's crate, no hardcoded strings. Override the active model without entering the shell:
+Models are sourced dynamically from each provider's crate. Override the active model without entering the shell:
 
 ```sh
 export GEMINI_MODEL=gemini-2.5-pro-preview-05-06

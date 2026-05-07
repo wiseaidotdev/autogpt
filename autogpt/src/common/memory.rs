@@ -5,14 +5,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::common::utils::ClientType;
-use crate::common::utils::Message;
+use crate::common::utils::{ClientType, Message};
 use anyhow::Result;
-use pinecone_sdk::models::{Kind, Value, Vector};
+use pinecone_sdk::models::{Kind, Metadata, Value, Vector};
 use pinecone_sdk::pinecone::PineconeClientConfig;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::{env, io};
 use tracing::{error, warn};
+use uuid::Uuid;
 
 async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<f64> {
     match client {
@@ -128,7 +129,7 @@ pub async fn save_long_term_memory(
     message: Message,
 ) -> Result<()> {
     let config = PineconeClientConfig {
-        api_key: Some(std::env::var("PINECONE_API_KEY").unwrap_or_default()),
+        api_key: Some(env::var("PINECONE_API_KEY").unwrap_or_default()),
         ..Default::default()
     };
 
@@ -137,18 +138,18 @@ pub async fn save_long_term_memory(
         Ok(client) => client,
         Err(e) => {
             error!("Error creating Pinecone client: {:?}", e);
-            return Err(std::io::Error::other("Failed to create Pinecone client").into());
+            return Err(io::Error::other("Failed to create Pinecone client").into());
         }
     };
 
     let index_result = pinecone
-        .index(&std::env::var("PINECONE_INDEX_URL").unwrap_or_default())
+        .index(&env::var("PINECONE_INDEX_URL").unwrap_or_default())
         .await;
     let mut index = match index_result {
         Ok(index) => index,
         Err(e) => {
             error!("Error connecting to Pinecone index: {:?}", e);
-            return Err(std::io::Error::other("Failed to connect to Pinecone index").into());
+            return Err(io::Error::other("Failed to connect to Pinecone index").into());
         }
     };
 
@@ -169,10 +170,10 @@ pub async fn save_long_term_memory(
     let role = message.role.clone();
 
     let vector = Vector {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: Uuid::new_v4().to_string(),
         values: padded_values,
         sparse_values: None,
-        metadata: Some(pinecone_sdk::models::Metadata {
+        metadata: Some(Metadata {
             fields: BTreeMap::from([
                 (
                     "role".to_string(),
@@ -197,7 +198,7 @@ pub async fn save_long_term_memory(
 
 pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Message>> {
     let config = PineconeClientConfig {
-        api_key: Some(std::env::var("PINECONE_API_KEY").unwrap()),
+        api_key: Some(env::var("PINECONE_API_KEY").unwrap()),
         ..Default::default()
     };
 
@@ -206,18 +207,18 @@ pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Me
         Ok(client) => client,
         Err(e) => {
             error!("Error creating Pinecone client: {:?}", e);
-            return Err(std::io::Error::other("Failed to create Pinecone client").into());
+            return Err(io::Error::other("Failed to create Pinecone client").into());
         }
     };
 
     let index_result = pinecone
-        .index(&std::env::var("PINECONE_INDEX_URL").unwrap_or_default())
+        .index(&env::var("PINECONE_INDEX_URL").unwrap_or_default())
         .await;
     let mut index = match index_result {
         Ok(index) => index,
         Err(e) => {
             error!("Error connecting to Pinecone index: {:?}", e);
-            return Err(std::io::Error::other("Failed to connect to Pinecone index").into());
+            return Err(io::Error::other("Failed to connect to Pinecone index").into());
         }
     };
 
