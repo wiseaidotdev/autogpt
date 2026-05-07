@@ -29,6 +29,8 @@ pub mod git;
 pub mod mailer;
 #[cfg(feature = "gpt")]
 pub mod manager;
+#[cfg(feature = "mop")]
+pub mod mop;
 #[cfg(feature = "gpt")]
 pub mod optimizer;
 #[cfg(feature = "gpt")]

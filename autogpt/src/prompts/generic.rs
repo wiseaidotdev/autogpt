@@ -5,6 +5,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(dead_code)]
 /// The authoritative system prompt for the AutoGPT generic agent.
 pub(crate) const GENERIC_SYSTEM_PROMPT: &str = r#"
 You are AutoGPT, an elite, fully autonomous AI software engineering agent built on a Rust-powered

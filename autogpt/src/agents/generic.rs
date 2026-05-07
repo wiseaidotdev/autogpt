@@ -12,6 +12,9 @@ use std::borrow::Cow;
 #[cfg(feature = "net")]
 use crate::collaboration::Collaborator;
 
+#[cfg(feature = "mop")]
+use crate::agents::mop::run_mixture;
+
 #[cfg(feature = "mem")]
 use {
     crate::common::memory::load_long_term_memory, crate::common::memory::long_term_memory_context,
@@ -1605,7 +1608,11 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
         feature = "xai"
     )
 ))]
-pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> anyhow::Result<()> {
+pub async fn run_generic_agent_loop(
+    yolo: bool,
+    session_id: Option<&str>,
+    mixture: bool,
+) -> anyhow::Result<()> {
     print_banner();
     print_greeting();
 
@@ -1699,7 +1706,18 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
         let stdin = io::stdin();
         let mut line = String::new();
         stdin.lock().read_line(&mut line)?;
-        let input = line.trim().to_string();
+        let mut input = line.trim().to_string();
+
+        #[cfg(feature = "mop")]
+        if mixture
+            && !input.starts_with('/')
+            && !is_yes(&input)
+            && let Some((provider, response)) = run_mixture(&input).await
+        {
+            print_success(&format!("MoP selected response from: {provider}"));
+            render_markdown(&response);
+            input = format!("High-quality context from {provider}: {response}\n\nTask: {input}");
+        }
 
         if input.is_empty() {
             print_warning("Please enter a prompt to work on.");

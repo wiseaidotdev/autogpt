@@ -21,18 +21,18 @@
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wiseaidotdev/autogpt/main?filepath=examples/basic.ipynb)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wiseaidotdev/autogpt/blob/main/examples/basic.ipynb)
 
-![banner](https://github.com/user-attachments/assets/c642e17a-f164-44b5-9cd1-bc1711cebbbf)
+![banner](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/logo.png)
 
 |                                                    🐧 Linux `(Recommended)`                                                    |                                                           🪟 Windows                                                           |                                                          🐋                                                          |                                                          🐋                                                          |
 | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: |
 |              [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)               |              [![Crates.io Downloads](https://img.shields.io/crates/d/autogpt)](https://crates.io/crates/autogpt)               | [![Docker](https://img.shields.io/docker/pulls/kevinrsdev/autogpt.svg)](https://hub.docker.com/r/kevinrsdev/autogpt) | [![Docker](https://img.shields.io/docker/pulls/kevinrsdev/orchgpt.svg)](https://hub.docker.com/r/kevinrsdev/orchgpt) |
 |             ![linux-demo](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/linux.png)             |           ![windows-demo](https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/windows.png)           |                                                          -                                                           |                                                          -                                                           |
-|         Method 1: [Download Executable File](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.0/autogpt)         |              [Download `.exe` File](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.0/autogpt.exe)              |                                                          -                                                           |                                                          -                                                           |
+|         Method 1: [Download Executable File](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.1/autogpt)         |              [Download `.exe` File](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.1/autogpt.exe)              |                                                          -                                                           |                                                          -                                                           |
 |                                        Method 2: `cargo install autogpt --all-features`                                        |                                             `cargo install autogpt --all-features`                                             |                                        `docker pull kevinrsdev/autogpt`                                        |                                        `docker pull kevinrsdev/orchgpt`                                        |
 | [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) | [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) |   [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#-using-docker)   |   [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#-using-docker)   |
 |                                                 `autogpt -h` <br> `orchgpt -h`                                                 |                                                        `autogpt.exe -h`                                                        |                                       `docker run kevinrsdev/autogpt -h`                                       |                                       `docker run kevinrsdev/orchgpt -h`                                       |
 
-<video src="https://github.com/user-attachments/assets/ecd82549-a48f-49c2-b751-23f74820bf3d"></video>
+<video src="https://github.com/user-attachments/assets/55a28c1a-eba2-4c94-aee1-2661cbeaabc6"></video>
 
 </div>
 
@@ -66,6 +66,7 @@ AutoGPT is designed for flexibility, integration, and scalability:
 - 🧱 **Extensibility**: Add new tools, behaviors, or agent types with ease.
 - 💻 **CLI Tools**: Command-line interface for rapid experimentation and control.
 - 🧰 **SDK Support**: Embed AutoGPT into existing projects or systems seamlessly.
+- 🔀 **Mixture of Providers (MoP)**: Parallel fan-out and weighted scoring across multiple AI backends for optimal response quality.
 
 ## 📦 Installation
 
@@ -104,14 +105,26 @@ The interactive shell supports the following commands:
 
 > Press `ESC` at any time to interrupt a running generation.
 
+### 🔀 Mixture of Providers (MoP)
+
+AutoGPT introduces a high-availability **Mixture of Providers** architecture. When enabled via the `--mixture` or `-m` flag, every prompt is fanned out concurrently to all configured AI providers (Gemini, OpenAI, etc.). A weighted scoring engine evaluates responses based on:
+
+1. **Length calibration** (rewarding detail, penalizing fluff).
+1. **Code quality** (bonus for language-tagged Markdown blocks).
+1. **Structural richness** (headings, lists, hygiene).
+1. **Reasoning depth** (connectivity words and logical flow).
+1. **Completeness** (punctuation and closing delimiters).
+
+The highest-scored response is selected as the winner and injected into the agent's context, promoting the best "intelligence" available from your configured keys.
+
 ### The `.autogpt` Directory
 
 GenericGPT maintains all persistent state inside the workspace root (defaults to the **current directory**):
 
 ```sh
 .autogpt/
-├── sessions/          # YAML conversation snapshots, auto-saved after every response
-│   ├── <uuid>.yaml
+├── sessions/          # Markdown conversation snapshots, auto-saved after every response
+│   ├── <uuid>.md
 │   └── ...
 └── skills/            # TOML lesson files, injected into future prompts automatically
     ├── rust.toml
@@ -138,26 +151,30 @@ export MODEL=<any-model-id>    # global fallback for any provider
 
 ### How GenericGPT Works
 
-Each prompt goes through a six-step pipeline:
+Each prompt goes through a seven-step pipeline:
 
+1. **MoP Fan-out** (optional): Parallel execution across multiple providers.
 1. **Reasoning**: structured internal monologue stored in the session log.
-2. **Task synthesis**: decomposition into typed actions (`CreateFile`, `PatchFile`, `RunCommand`, ...).
-3. **Execution**: surgical file edits via `PatchFile`; shell execution via `RunCommand`.
-4. **Build-and-verify**: auto-detects `Cargo.toml` / `package.json` / `Makefile` and runs the build; retries on failure up to 3 times.
-5. **Reflection**: reviews outcomes and lesson candidates.
-6. **Skill extraction**: lessons written to `.autogpt/skills/<domain>.toml` and injected in future sessions.
+1. **Task synthesis**: decomposition into typed actions (`CreateFile`, `PatchFile`, `RunCommand`, ...).
+1. **Execution**: file edits via `PatchFile`; shell execution via `RunCommand`.
+1. **Build-and-verify**: auto-detects `Cargo.toml` / `package.json` / `Makefile` and runs the build; retries on failure up to 3 times.
+1. **Reflection**: reviews outcomes and lesson candidates.
+1. **Skill extraction**: lessons written to `.autogpt/skills/<domain>.toml` and injected in future sessions.
 
 ```mermaid
 flowchart TD
-    A([User enters prompt]) --> B[Reasoning pre-step]
-    B --> C[Task synthesis]
-    C --> D{User approves?}
-    D -- yolo mode / yes --> E[Execute actions]
-    E --> G[Build-and-verify loop]
-    G -- pass --> H[Reflection]
-    G -- fail, retry ≤3 --> E
-    H --> I[Save skills & session]
-    I --> K([Ready for next prompt])
+    A([User enters prompt]) --> B{Mixture mode?}
+    B -- Yes --> C[Run Mixture of Providers]
+    B -- No --> D[Standard Provider]
+    C & D --> E[Reasoning pre-step]
+    E --> F[Task synthesis]
+    F --> G{User approves?}
+    G -- yolo mode / yes --> H[Execute actions]
+    H --> I[Build-and-verify loop]
+    I -- pass --> J[Reflection]
+    I -- fail, retry ≤3 --> H
+    J --> K[Save skills & session]
+    K --> L([Ready for next prompt])
 ```
 
 ```mermaid
@@ -167,24 +184,31 @@ flowchart TD
     B -- Yes --> D{Subcommand}
     C --> E[Select Provider & Model]
     E --> F[Enter Prompt Loop]
-    F --> G[Agent Generates Response]
-    G --> F
-    D -- arch --> H[ArchitectGPT]
-    D -- back --> I[BackendGPT]
-    D -- front --> J[FrontendGPT]
-    D -- design --> K[DesignerGPT]
-    D -- manage --> L[ManagerGPT]
-    D -- -p prompt --> M[Direct LLM Prompt]
+    F --> G{Mixture enabled?}
+    G -- Yes --> H[Mixture of Providers]
+    G -- No --> I[Standard Prompt]
+    H & I --> J[Agent Generates Response]
+    J --> F
+    D -- arch --> K[ArchitectGPT]
+    D -- back --> L[BackendGPT]
+    D -- front --> M[FrontendGPT]
+    D -- design --> N[DesignerGPT]
+    D -- manage --> O[ManagerGPT]
+    D -- -p prompt --> P[Direct LLM Prompt]
 ```
 
 ### 1. 💬 Direct Prompt Mode
 
 <video src="https://github.com/user-attachments/assets/505737f6-2fe8-4a93-8cd9-fb036b55b8fd"></video>
 
-In this mode, you can use the CLI to interact with the LLM directly, no need to define or configure agents. Use the `-p` flag to send prompts to your preferred LLM provider quickly and easily.
+In this mode, you can use the CLI to interact with the LLM directly, no need to define or configure agents. Use the `-p` flag to send prompts to your preferred LLM provider quickly and easily. Combine with `--mixture` to get the best answer from all your providers at once.
 
 ```sh
+# Single provider
 autogpt -p "Explain the Rust borrow checker in simple terms"
+
+# Mixture of Providers (fanned out)
+autogpt -m -p "Implement a Red-Black tree in Rust"
 ```
 
 ### 2. 🧠 Agentic Networkless Mode (Standalone)

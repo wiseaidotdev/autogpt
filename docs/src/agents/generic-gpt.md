@@ -23,8 +23,8 @@ GenericGPT maintains a hidden directory at its state root (typically `~/.autogpt
 
 ```
 ~/.autogpt/
-├── sessions/                  # Saved conversation sessions (YAML)
-│   ├── <uuid>.yaml
+├── sessions/          # Markdown conversation snapshots, auto-saved after every response
+│   ├── <uuid>.md
 │   └── ...
 └── skills/                    # Learned lessons (TOML)
     ├── rust.toml

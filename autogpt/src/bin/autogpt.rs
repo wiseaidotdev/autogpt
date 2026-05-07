@@ -44,6 +44,8 @@ async fn main() -> Result<()> {
         use autogpt::agents::mailer::MailerGPT;
         #[cfg(feature = "gpt")]
         use autogpt::agents::manager::ManagerGPT;
+        #[cfg(feature = "mop")]
+        use autogpt::agents::mop::run_mixture;
         #[cfg(feature = "gpt")]
         use autogpt::agents::optimizer::OptimizerGPT;
         use autogpt::cli::autogpt::commands::{build, new, run, test};
@@ -105,11 +107,16 @@ async fn main() -> Result<()> {
 
         let current_version = env!("CARGO_PKG_VERSION");
 
-        #[allow(clippy::collapsible_if)]
-        if let Some(latest_version) = fetch_latest_version().await {
-            if is_outdated(current_version, &latest_version) {
+        let tui_mode = args.prompt.is_none() && args.command.is_none() && !args.net;
+        if let Some(latest_version) = fetch_latest_version().await
+            && is_outdated(current_version, &latest_version)
+        {
+            if tui_mode {
                 use autogpt::cli::tui::render_update_banner;
                 render_update_banner(current_version, &latest_version);
+            } else {
+                use autogpt::common::utils::prompt_for_update;
+                prompt_for_update();
             }
         }
 
@@ -222,6 +229,23 @@ async fn main() -> Result<()> {
             Ok(())
         }
         if let Some(prompt) = args.prompt {
+            #[cfg(feature = "mop")]
+            if args.mixture {
+                use colored::Colorize;
+                use tracing::info;
+                if let Some((provider, response)) = run_mixture(&prompt).await {
+                    info!(
+                        "{}",
+                        format!("[*] MoP: selected response from {}", provider)
+                            .bright_green()
+                            .bold()
+                    );
+                    let skin = MadSkin::default();
+                    skin.print_text(&response);
+                    return Ok(());
+                }
+            }
+
             let skin = MadSkin::default();
             let mut client = ClientType::from_env();
             match &mut client {
@@ -477,7 +501,17 @@ async fn main() -> Result<()> {
             }
         } else if args.command.is_none() {
             use autogpt::agents::generic::run_generic_agent_loop;
-            run_generic_agent_loop(args.yolo, args.session.as_deref()).await?;
+            let mixture = {
+                #[cfg(feature = "mop")]
+                {
+                    args.mixture
+                }
+                #[cfg(not(feature = "mop"))]
+                {
+                    false
+                }
+            };
+            run_generic_agent_loop(args.yolo, args.session.as_deref(), mixture).await?;
         } else if let Some(command) = args.command {
             #[cfg(feature = "gpt")]
             let workspace = var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace/".to_string());
@@ -518,7 +552,26 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
+
                         manager = ManagerGPT::new(persona, behavior, &input, language);
 
                         if !input.is_empty() {
@@ -552,7 +605,25 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
 
                         if !input.is_empty() {
                             let input = input.clone();
@@ -637,7 +708,25 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
 
                         if !input.is_empty() {
                             let input = input.clone();
@@ -736,7 +825,25 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
 
                         if !input.is_empty() {
                             let input = input.clone();
@@ -816,7 +923,25 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
 
                         if !input.is_empty() {
                             let input = input.clone();
@@ -871,7 +996,25 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
 
                         if !input.is_empty() {
                             let input = input.clone();
@@ -917,7 +1060,25 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
-                        let input = read_user_input()?;
+                        let mut input = read_user_input()?;
+
+                        #[cfg(feature = "mop")]
+                        if args.mixture
+                            && !input.is_empty()
+                            && let Some((provider, response)) = run_mixture(&input).await
+                        {
+                            info!(
+                                "{}",
+                                format!("[*] MoP: selected response from {}", provider)
+                                    .bright_green()
+                                    .bold()
+                            );
+                            let skin = MadSkin::default();
+                            skin.print_text(&response);
+                            input = format!(
+                                "High-quality context from {provider}: {response}\n\nTask: {input}"
+                            );
+                        }
 
                         if !input.is_empty() {
                             let input = input.clone();

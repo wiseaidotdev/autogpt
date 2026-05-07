@@ -58,22 +58,31 @@ AUTHORS:
 ██   ██ ██    ██    ██    ██    ██ ██    ██ ██         ██    
 ██   ██  ██████     ██     ██████   ██████  ██         ██    
 
-The `autogpt` CLI enables interaction with the Orchestrator and/or an AI Provider
-through a suite of built-in, specialized autonomous AI agents designed for various
-stages of project development.
+The `autogpt` CLI enables interaction with AI providers through a suite of
+built-in, specialized autonomous AI agents designed for various stages of
+project development.
 
 Modes of Operation:
 -------------------
-Autogpt supports 2 modes:
+Autogpt supports 4 modes:
 
-1. Networking (Agentic) Mode (default):
-   When no subcommand is provided, `autogpt` runs as a networked agent that connects
-   to an orchestrator (`orchgpt`) over TLS-encrypted TCP. The orchestrator can run
-   on the same or a separate machine.
+1. Interactive Mode (default):
+   Run `autogpt` with no arguments to launch the GenericGPT interactive
+   shell with session persistence, model switching, and multi-provider
+   support.
 
-2. Networkless (Agentic) Mode:
-   When a subcommand is specified, `autogpt` runs locally in standalone mode, without
-   requiring a connection to an orchestrator.
+2. Direct Prompt Mode:
+   Use `autogpt -p "<prompt>"` to send a single prompt directly to the
+   active LLM provider and stream the response, no agentic workflow
+   required.
+
+3. Agentic Networkless Mode:
+   Run `autogpt <subcommand>` (e.g. `back`, `front`, `arch`) to invoke a
+   specialized autonomous agent locally without an orchestrator.
+
+4. Agentic Networking Mode:
+   Use `autogpt --net` to connect to an `orchgpt` orchestrator over
+   TLS-encrypted TCP for distributed multi-agent collaboration.
 "#
 
 )]
@@ -108,6 +117,15 @@ pub struct Cli {
     /// loads the session history and resumes from where it left off.
     #[arg(short, long, value_name = "SESSION_ID")]
     pub session: Option<String>,
+
+    /// Enable Mixture of Providers mode.
+    ///
+    /// Fans each prompt out to all configured AI providers concurrently and
+    /// returns the highest-scored response. Only applies in interactive TUI mode.
+    /// Requires the `mop` feature flag at compile time.
+    #[cfg(feature = "mop")]
+    #[arg(short = 'm', long, default_value_t = false)]
+    pub mixture: bool,
 
     /// Subcommands for autogpt.
     #[clap(subcommand)]

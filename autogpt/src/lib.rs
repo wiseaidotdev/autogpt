@@ -5,6 +5,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/logo.png",
+    html_favicon_url = "https://raw.githubusercontent.com/wiseaidotdev/autogpt/refs/heads/main/assets/favicon.png"
+)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
