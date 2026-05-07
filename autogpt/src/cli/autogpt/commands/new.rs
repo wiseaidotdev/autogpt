@@ -102,7 +102,7 @@ pub fn handle_new(name: &str) -> Result<()> {
 
 fn set_env(project_path: &Path) -> Result<()> {
     let yaml_path = project_path.join("agent.yaml");
-    let yaml_content = std::fs::read_to_string(&yaml_path).context("Failed to read agent.yaml")?;
+    let yaml_content = fs::read_to_string(&yaml_path).context("Failed to read agent.yaml")?;
 
     let config: AgentConfig =
         serde_yaml::from_str(&yaml_content).context("Failed to parse agent.yaml")?;
@@ -148,7 +148,7 @@ fn set_env_win(key: &str, value: &str) -> Result<()> {
 
 fn append(profile_path: &Path, key: &str, value: &str) -> Result<()> {
     let export_line = format!("export {key}={value}\n");
-    let existing = std::fs::read_to_string(profile_path).unwrap_or_default();
+    let existing = fs::read_to_string(profile_path).unwrap_or_default();
 
     if !existing.contains(export_line.trim()) {
         let mut file = OpenOptions::new()

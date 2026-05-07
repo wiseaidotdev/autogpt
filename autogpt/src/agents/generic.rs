@@ -1,7 +1,7 @@
 use crate::agents::agent::AgentGPT;
 use crate::common::utils::{
     Capability, ClientType, ContextManager, Knowledge, Persona, Planner, Reflection, Status, Task,
-    TaskScheduler, Tool,
+    TaskScheduler, Tool, is_yes, strip_code_blocks,
 };
 #[cfg(feature = "cli")]
 use crate::prelude::*;
@@ -50,20 +50,27 @@ use x_ai::{
 
 #[cfg(feature = "cli")]
 use {
+    crate::cli::models::{default_model, default_provider, model_index, provider_models},
     crate::cli::session::{Session, SessionManager, SessionTask, TaskStatus as SessionTaskStatus},
     crate::cli::skills::SkillStore,
     crate::cli::tui::{
-        TaskStatus as TuiTaskStatus, create_spinner, print_agent_msg, print_error, print_section,
-        print_success, print_task_item, print_warning, render_markdown,
+        TaskStatus as TuiTaskStatus, create_spinner, print_agent_msg, print_banner, print_error,
+        print_greeting, print_section, print_status_bar, print_success, print_task_item,
+        print_warning, render_help_table, render_input_box_hint, render_markdown,
+        render_model_selector, render_warning_box,
     },
     crate::prompts::generic::{
-        GENERIC_SYSTEM_PROMPT, IMPLEMENTATION_PLAN_PROMPT, LESSON_EXTRACTION_PROMPT,
-        REASONING_PROMPT, REFLECTION_PROMPT, TASK_EXECUTION_PROMPT, TASK_SYNTHESIS_PROMPT,
-        WALKTHROUGH_PROMPT,
+        FOLLOWUP_SYNTHESIS_PROMPT, GENERIC_SYSTEM_PROMPT, IMPLEMENTATION_PLAN_PROMPT,
+        LESSON_EXTRACTION_PROMPT, REASONING_PROMPT, REFLECTION_PROMPT, TASK_EXECUTION_PROMPT,
+        TASK_SYNTHESIS_PROMPT, WALKTHROUGH_PROMPT,
     },
+    anyhow::anyhow,
     colored::Colorize,
     serde::{Deserialize, Serialize},
-    std::io::{self, BufRead, Write},
+    std::env,
+    std::fs,
+    std::io::{self, BufRead, Write as IoWrite},
+    std::path::{Path, PathBuf},
     std::time::Duration,
     termimad::crossterm::event::{self, Event, KeyCode},
     tracing::{error, info, warn},
@@ -125,6 +132,13 @@ pub enum ActionRequest {
     GitCommit {
         message: String,
     },
+    GlobFiles {
+        pattern: String,
+    },
+    MultiPatch {
+        path: String,
+        patches: Vec<(String, String)>,
+    },
 }
 
 /// Result of executing a single action directive.
@@ -179,7 +193,30 @@ pub struct ReflectionResult {
 ///   4. Execute each task by prompting the LLM for `ActionRequest` JSON and running each action.
 ///   5. Reflect on every task's output; retry up to `max_tries` times before skipping.
 ///   6. Write a session walkthrough document on completion.
-#[cfg(feature = "cli")]
+#[cfg(all(
+    feature = "cli",
+    not(any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    ))
+))]
+compile_error!(
+    "The 'cli' feature requires at least one LLM provider (gem, oai, cld, xai, or co). Please build with e.g., --features cli,gem"
+);
+
+#[cfg(all(
+    feature = "cli",
+    any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    )
+))]
 #[derive(Debug, Default, Clone, Auto)]
 pub struct GenericAgent {
     pub agent: AgentGPT,
@@ -201,7 +238,16 @@ use {
     async_trait::async_trait,
 };
 
-#[cfg(feature = "cli")]
+#[cfg(all(
+    feature = "cli",
+    any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    )
+))]
 #[async_trait]
 impl Executor for GenericAgent {
     /// Runs the full AutoGPT pipeline for a single user prompt.
@@ -227,9 +273,9 @@ impl Executor for GenericAgent {
         session_mgr.ensure_dirs()?;
 
         let workspace = if self.workspace.is_empty() {
-            std::env::var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| {
+            env::var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| {
                 dirs::home_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .unwrap_or_else(|| PathBuf::from("."))
                     .join(".autogpt")
                     .join("workspace")
                     .to_string_lossy()
@@ -238,11 +284,11 @@ impl Executor for GenericAgent {
         } else {
             self.workspace.clone()
         };
-        std::fs::create_dir_all(&workspace)?;
-        let workspace_path = std::path::PathBuf::from(&workspace);
+        fs::create_dir_all(&workspace)?;
+        let workspace_path = PathBuf::from(&workspace);
 
         let skills_dir = dirs::home_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .unwrap_or_else(|| PathBuf::from("."))
             .join(".autogpt")
             .join("skills");
 
@@ -269,7 +315,12 @@ impl Executor for GenericAgent {
         print_section("🔬 Synthesizing Task List");
         let task_spinner = create_spinner("Decomposing your request into actionable tasks...");
 
-        let tasks = match self.synthesize_tasks(&prompt, "", &skills_context).await {
+        let workspace_snapshot = self.scan_workspace(&workspace_path).await;
+
+        let tasks = match self
+            .synthesize_tasks(&prompt, "", &skills_context, &workspace_snapshot)
+            .await
+        {
             Ok(t) if !t.is_empty() => t,
             Ok(_) => {
                 task_spinner.finish_and_clear();
@@ -333,14 +384,13 @@ impl Executor for GenericAgent {
             let mut approval = String::new();
             io::stdin().lock().read_line(&mut approval)?;
 
-            if !crate::common::utils::is_yes(approval.trim()) {
+            if !is_yes(approval.trim()) {
                 print_warning("Plan not approved. Ready for next prompt.");
                 session.add_message("user", "Plan rejected.");
                 session_mgr.save(&session)?;
                 return Ok(());
             }
         }
-
         print_section("⚙️  Executing Tasks via AutoGPT");
 
         let tasks_snapshot = session.tasks.clone();
@@ -478,17 +528,17 @@ impl Executor for GenericAgent {
                 .replace("{FILES_CREATED}", &files_str)
         );
 
-        let walkthrough = self
-            .generate(&wt_prompt)
-            .await
-            .unwrap_or_else(|_| SessionManager::generate_walkthrough(&session));
+        let walkthrough = match self.generate(&wt_prompt).await {
+            Ok(w) if !w.trim().is_empty() => w,
+            _ => SessionManager::generate_walkthrough(&session),
+        };
 
         wt_spinner.finish_and_clear();
         session.set_walkthrough(&walkthrough);
         session_mgr.save(&session)?;
 
         let wt_path = session_mgr.base_dir.join("walkthrough.md");
-        std::fs::write(&wt_path, &walkthrough)?;
+        fs::write(&wt_path, &walkthrough)?;
 
         if let Some((domain, lessons, anti_patterns)) = self
             .extract_lessons(&prompt, &session.tasks, &tasks_status)
@@ -527,11 +577,17 @@ impl GenericAgent {
         prompt: &str,
         history: &str,
         skills_context: &str,
+        workspace_snapshot: &str,
     ) -> Result<Vec<SessionTask>> {
-        let full_prompt = TASK_SYNTHESIS_PROMPT
-            .replace("{PROMPT}", prompt)
-            .replace("{HISTORY}", history)
-            .replace("{SKILLS_CONTEXT}", skills_context);
+        let full_prompt = format!(
+            "{}\n\n{}",
+            GENERIC_SYSTEM_PROMPT,
+            TASK_SYNTHESIS_PROMPT
+                .replace("{PROMPT}", prompt)
+                .replace("{HISTORY}", history)
+                .replace("{WORKSPACE_SNAPSHOT}", workspace_snapshot)
+                .replace("{SKILLS_CONTEXT}", skills_context)
+        );
 
         let raw = self.generate(&full_prompt).await?;
 
@@ -564,7 +620,7 @@ impl GenericAgent {
             return Ok(numbered);
         }
 
-        let clean = crate::common::utils::strip_code_blocks(&raw);
+        let clean = strip_code_blocks(&raw);
         if let Ok(arr) = serde_json::from_str::<Vec<String>>(clean.trim()) {
             let from_json: Vec<SessionTask> = arr
                 .into_iter()
@@ -579,7 +635,7 @@ impl GenericAgent {
             }
         }
 
-        Err(anyhow::anyhow!(
+        Err(anyhow!(
             "LLM returned malformed task list. Raw output: {}",
             &raw[..raw.len().min(200)]
         ))
@@ -625,37 +681,55 @@ impl GenericAgent {
             .join("\n");
 
         let plan_lines: Vec<&str> = plan.lines().collect();
+        let search_key = &task.description[..task.description.len().min(40)];
         let plan_excerpt: String = plan_lines
             .iter()
-            .skip_while(|l| !l.contains(&task.description[..task.description.len().min(30)]))
-            .take(10)
+            .skip_while(|l| !l.to_lowercase().contains(&search_key.to_lowercase()))
+            .take(12)
             .cloned()
             .collect::<Vec<_>>()
             .join("\n");
 
-        let full_prompt = REASONING_PROMPT
-            .replace("{TASK_NUM}", &task_num.to_string())
-            .replace("{TASK_TOTAL}", &task_total.to_string())
-            .replace("{TASK_DESCRIPTION}", &task.description)
-            .replace(
-                "{PLAN_EXCERPT}",
-                if plan_excerpt.is_empty() {
-                    &plan[..plan.len().min(500)]
-                } else {
-                    &plan_excerpt
-                },
-            )
-            .replace("{COMPLETED_TASKS}", &completed_str)
-            .replace("{WORKSPACE}", workspace);
+        let effective_excerpt = if plan_excerpt.is_empty() {
+            plan.lines().take(15).collect::<Vec<_>>().join("\n")
+        } else {
+            plan_excerpt
+        };
+
+        let full_prompt = format!(
+            "{}\n\n{}",
+            GENERIC_SYSTEM_PROMPT,
+            REASONING_PROMPT
+                .replace("{TASK_NUM}", &task_num.to_string())
+                .replace("{TASK_TOTAL}", &task_total.to_string())
+                .replace("{TASK_DESCRIPTION}", &task.description)
+                .replace("{PLAN_EXCERPT}", &effective_excerpt)
+                .replace("{COMPLETED_TASKS}", &completed_str)
+                .replace("{WORKSPACE}", workspace)
+        );
 
         let raw = self.generate(&full_prompt).await.unwrap_or_default();
-        let clean = crate::common::utils::strip_code_blocks(&raw);
+        let clean = strip_code_blocks(&raw);
 
-        serde_json::from_str::<ReasoningResult>(clean.trim()).unwrap_or_else(|_| ReasoningResult {
-            thought: raw.chars().take(300).collect(),
-            approach: String::new(),
-            risks: vec![],
-        })
+        let parsed = serde_json::from_str::<ReasoningResult>(clean.trim());
+        match parsed {
+            Ok(r) if !r.thought.trim().is_empty() => r,
+            _ => {
+                let thought = if raw.trim().is_empty() {
+                    format!(
+                        "Executing task {task_num}/{task_total}: {}.",
+                        task.description
+                    )
+                } else {
+                    raw.chars().take(400).collect()
+                };
+                ReasoningResult {
+                    thought,
+                    approach: format!("Emit action directives for: {}", task.description),
+                    risks: vec![],
+                }
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -667,7 +741,7 @@ impl GenericAgent {
         task_total: usize,
         plan: &str,
         completed: &[&str],
-        workspace: &std::path::Path,
+        workspace: &Path,
         session: &mut Session,
         reasoning: &ReasoningResult,
     ) -> Result<Vec<ActionResult>> {
@@ -738,13 +812,13 @@ impl GenericAgent {
     /// Dispatches a single `ActionRequest` to the appropriate operation.
     pub async fn run_action(
         action: &ActionRequest,
-        workspace: &std::path::Path,
+        workspace: &Path,
         session: &mut Session,
     ) -> ActionResult {
         match action {
             ActionRequest::CreateDir { path } => {
                 let abs = workspace.join(path);
-                match std::fs::create_dir_all(&abs) {
+                match fs::create_dir_all(&abs) {
                     Ok(_) => {
                         info!("  {} {}", "📁".bright_cyan(), path.bright_blue());
                         ActionResult {
@@ -773,9 +847,9 @@ impl GenericAgent {
                     _ => "WriteFile",
                 };
                 if let Some(parent) = abs.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                    let _ = fs::create_dir_all(parent);
                 }
-                match std::fs::write(&abs, content) {
+                match fs::write(&abs, content) {
                     Ok(_) => {
                         info!("  {} {}", "📄".bright_cyan(), path.bright_blue());
                         session.record_file(path, action_type);
@@ -799,7 +873,7 @@ impl GenericAgent {
 
             ActionRequest::ReadFile { path } => {
                 let abs = workspace.join(path);
-                match std::fs::read_to_string(&abs) {
+                match fs::read_to_string(&abs) {
                     Ok(content) => {
                         info!("  {} {}", "📖".bright_cyan(), path.bright_blue());
                         ActionResult {
@@ -826,7 +900,7 @@ impl GenericAgent {
                 new_text,
             } => {
                 let abs = workspace.join(path);
-                match std::fs::read_to_string(&abs) {
+                match fs::read_to_string(&abs) {
                     Ok(content) => {
                         if !content.contains(old_text.as_str()) {
                             return ActionResult {
@@ -841,7 +915,7 @@ impl GenericAgent {
                             };
                         }
                         let patched = content.replacen(old_text.as_str(), new_text.as_str(), 1);
-                        match std::fs::write(&abs, &patched) {
+                        match fs::write(&abs, &patched) {
                             Ok(_) => {
                                 info!("  {} {}", "✏️ ".bright_cyan(), path.bright_blue());
                                 session.record_file(path, "PatchFile");
@@ -875,14 +949,9 @@ impl GenericAgent {
             ActionRequest::AppendFile { path, content } => {
                 let abs = workspace.join(path);
                 if let Some(parent) = abs.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                    let _ = fs::create_dir_all(parent);
                 }
-                use std::io::Write as IoWrite;
-                match std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&abs)
-                {
+                match fs::OpenOptions::new().create(true).append(true).open(&abs) {
                     Ok(mut file) => match file.write_all(content.as_bytes()) {
                         Ok(_) => {
                             info!("  {} {}", "➕".bright_cyan(), path.bright_blue());
@@ -914,12 +983,8 @@ impl GenericAgent {
             }
 
             ActionRequest::ListDir { path } => {
-                let abs = if path == "." {
-                    workspace.to_path_buf()
-                } else {
-                    workspace.join(path)
-                };
-                match std::fs::read_dir(&abs) {
+                let abs = workspace.to_path_buf();
+                match fs::read_dir(&abs) {
                     Ok(entries) => {
                         let mut lines = Vec::new();
                         for entry in entries.flatten() {
@@ -948,7 +1013,7 @@ impl GenericAgent {
 
             ActionRequest::FindInFile { path, pattern } => {
                 let abs = workspace.join(path);
-                match std::fs::read_to_string(&abs) {
+                match fs::read_to_string(&abs) {
                     Ok(content) => {
                         let matches: Vec<String> = content
                             .lines()
@@ -1065,10 +1130,95 @@ impl GenericAgent {
                     },
                 }
             }
+
+            ActionRequest::GlobFiles { pattern } => {
+                let mut matched: Vec<String> = Vec::new();
+                Self::walk_glob(workspace, workspace, pattern, &mut matched);
+                matched.sort();
+                ActionResult {
+                    action_type: "GlobFiles".into(),
+                    path: None,
+                    stdout: matched.join("\n"),
+                    stderr: String::new(),
+                    success: true,
+                }
+            }
+
+            ActionRequest::MultiPatch { path, patches } => {
+                let abs = workspace.join(path);
+                match fs::read_to_string(&abs) {
+                    Ok(original) => {
+                        let mut content = original;
+                        let mut applied = 0usize;
+                        let mut errors: Vec<String> = Vec::new();
+                        for (old_text, new_text) in patches {
+                            if content.contains(old_text.as_str()) {
+                                content = content.replacen(old_text.as_str(), new_text.as_str(), 1);
+                                applied += 1;
+                            } else {
+                                errors.push(format!(
+                                    "anchor not found: {:?}",
+                                    &old_text[..old_text.len().min(60)]
+                                ));
+                            }
+                        }
+                        if let Err(e) = fs::write(&abs, &content) {
+                            return ActionResult {
+                                action_type: "MultiPatch".into(),
+                                path: Some(path.clone()),
+                                stdout: String::new(),
+                                stderr: e.to_string(),
+                                success: false,
+                            };
+                        }
+                        let success = errors.is_empty();
+                        if success {
+                            info!(
+                                "  {} {} ({} patches)",
+                                "✏️ ".bright_cyan(),
+                                path.bright_blue(),
+                                applied
+                            );
+                            session.record_file(path, "MultiPatch");
+                        }
+                        ActionResult {
+                            action_type: "MultiPatch".into(),
+                            path: Some(path.clone()),
+                            stdout: format!("{applied} patches applied."),
+                            stderr: errors.join("\n"),
+                            success,
+                        }
+                    }
+                    Err(e) => ActionResult {
+                        action_type: "MultiPatch".into(),
+                        path: Some(path.clone()),
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                        success: false,
+                    },
+                }
+            }
         }
     }
 
-    fn detect_build_system(workspace: &std::path::Path) -> Option<ActionRequest> {
+    fn walk_glob(workspace: &Path, dir: &Path, pattern: &str, results: &mut Vec<String>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                Self::walk_glob(workspace, &path, pattern, results);
+            } else if let Ok(rel) = path.strip_prefix(workspace) {
+                let rel_str = rel.to_string_lossy();
+                if pattern_matches(pattern, &rel_str) {
+                    results.push(rel_str.to_string());
+                }
+            }
+        }
+    }
+
+    fn detect_build_system(workspace: &Path) -> Option<ActionRequest> {
         if workspace.join("Cargo.toml").exists() {
             return Some(ActionRequest::RunCommand {
                 cmd: "cargo".into(),
@@ -1100,12 +1250,19 @@ impl GenericAgent {
                 cwd: None,
             });
         }
+        if workspace.join("Makefile").exists() || workspace.join("makefile").exists() {
+            return Some(ActionRequest::RunCommand {
+                cmd: "make".into(),
+                args: vec![],
+                cwd: None,
+            });
+        }
         None
     }
 
     async fn build_and_verify(
         &mut self,
-        workspace: &std::path::Path,
+        workspace: &Path,
         session: &mut Session,
         max_attempts: u8,
     ) -> bool {
@@ -1151,7 +1308,7 @@ impl GenericAgent {
             );
 
             let raw = self.generate(&fix_prompt).await.unwrap_or_default();
-            let clean = crate::common::utils::strip_code_blocks(&raw);
+            let clean = strip_code_blocks(&raw);
             let fix_actions: Vec<ActionRequest> =
                 serde_json::from_str(clean.trim()).unwrap_or_default();
 
@@ -1229,19 +1386,201 @@ impl GenericAgent {
         let raw = self.generate(&full_prompt).await.ok()?;
         let clean = crate::common::utils::strip_code_blocks(&raw);
 
-        #[derive(Deserialize)]
-        struct LessonOutput {
-            domain: String,
-            #[serde(default)]
-            lessons: Vec<String>,
-            #[serde(default)]
-            anti_patterns: Vec<String>,
-        }
-
         serde_json::from_str::<LessonOutput>(clean.trim())
             .ok()
             .map(|l| (l.domain, l.lessons, l.anti_patterns))
     }
+
+    /// Scans the workspace up to two directory levels deep and reads common config files.
+    ///
+    /// Returns a compact string suitable for injection into synthesis prompts so the LLM
+    /// knows what already exists before emitting task directives. The total output is
+    /// capped at roughly 2 000 characters to limit token overhead.
+    async fn scan_workspace(&self, workspace: &Path) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        Self::list_tree(workspace, workspace, 0, 2, &mut lines);
+
+        let config_names = [
+            "Cargo.toml",
+            "package.json",
+            "pyproject.toml",
+            "requirements.txt",
+            "go.mod",
+            "Makefile",
+            "README.md",
+        ];
+        let mut config_snippets: Vec<String> = Vec::new();
+        for name in &config_names {
+            let path = workspace.join(name);
+            if let Ok(content) = fs::read_to_string(&path) {
+                let preview: String = content.lines().take(12).collect::<Vec<_>>().join("\n");
+                if !preview.trim().is_empty() {
+                    config_snippets.push(format!("### {name}\n```\n{preview}\n```"));
+                }
+            }
+        }
+
+        let tree = lines.join("\n");
+        let configs = config_snippets.join("\n\n");
+        let combined = if configs.is_empty() {
+            tree
+        } else {
+            format!("{tree}\n\n{configs}")
+        };
+
+        if combined.is_empty() {
+            String::new()
+        } else {
+            combined.chars().take(2000).collect()
+        }
+    }
+
+    fn list_tree(
+        workspace: &Path,
+        dir: &Path,
+        depth: usize,
+        max_depth: usize,
+        out: &mut Vec<String>,
+    ) {
+        if depth > max_depth {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        let mut items: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                !p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with('.'))
+                    .unwrap_or(false)
+            })
+            .collect();
+        items.sort();
+        for path in items {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let rel = path
+                .strip_prefix(workspace)
+                .map(|r| r.to_string_lossy().to_string())
+                .unwrap_or_else(|_| name.to_string());
+            let indent = "  ".repeat(depth);
+            if path.is_dir() {
+                out.push(format!("{indent}{rel}/"));
+                Self::list_tree(workspace, &path, depth + 1, max_depth, out);
+            } else {
+                out.push(format!("{indent}{rel}"));
+            }
+        }
+    }
+
+    /// Synthesises a delta task list for a follow-up request on an existing session.
+    ///
+    /// Uses `FOLLOWUP_SYNTHESIS_PROMPT` which instructs the LLM to emit only the
+    /// _new_ tasks required to satisfy the request, without re-scaffolding anything
+    /// already built.
+    async fn synthesize_followup_tasks(
+        &mut self,
+        user_request: &str,
+        prior_session: &Session,
+        skills_context: &str,
+        workspace_snapshot: &str,
+    ) -> Result<Vec<SessionTask>> {
+        let prior_context = prior_session.session_context_summary();
+
+        let full_prompt = format!(
+            "{}\n\n{}",
+            GENERIC_SYSTEM_PROMPT,
+            FOLLOWUP_SYNTHESIS_PROMPT
+                .replace("{USER_REQUEST}", user_request)
+                .replace("{PRIOR_CONTEXT}", &prior_context)
+                .replace("{WORKSPACE_SNAPSHOT}", workspace_snapshot)
+                .replace("{SKILLS_CONTEXT}", skills_context)
+        );
+
+        let raw = self.generate(&full_prompt).await?;
+
+        let numbered: Vec<SessionTask> = raw
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty()
+                    && t.chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+            })
+            .map(|l| {
+                let desc = l
+                    .trim()
+                    .trim_start_matches(|c: char| c.is_ascii_digit())
+                    .trim_start_matches('.')
+                    .trim()
+                    .to_string();
+                SessionTask {
+                    description: desc,
+                    status: SessionTaskStatus::Pending,
+                }
+            })
+            .filter(|t| Self::is_valid_task_desc(&t.description))
+            .collect();
+
+        if !numbered.is_empty() {
+            return Ok(numbered);
+        }
+
+        let clean = strip_code_blocks(&raw);
+        if let Ok(arr) = serde_json::from_str::<Vec<String>>(clean.trim()) {
+            let from_json: Vec<SessionTask> = arr
+                .into_iter()
+                .filter(|s| Self::is_valid_task_desc(s))
+                .map(|s| SessionTask {
+                    description: s,
+                    status: SessionTaskStatus::Pending,
+                })
+                .collect();
+            if !from_json.is_empty() {
+                return Ok(from_json);
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "LLM returned an empty follow-up task list. Raw: {}",
+            &raw[..raw.len().min(200)]
+        ))
+    }
+}
+
+/// Lesson data extracted at the end of a session for the skill store.
+#[cfg(feature = "cli")]
+#[derive(Deserialize)]
+struct LessonOutput {
+    domain: String,
+    #[serde(default)]
+    lessons: Vec<String>,
+    #[serde(default)]
+    anti_patterns: Vec<String>,
+}
+
+/// Returns `true` when a file path matches a simple glob pattern.
+///
+/// Supports `*` (any characters within one path segment) and `**` (any path).
+/// Case-sensitive. Used by the `GlobFiles` action handler.
+#[cfg(feature = "cli")]
+fn pattern_matches(pattern: &str, path: &str) -> bool {
+    if pattern == "**" {
+        return true;
+    }
+    if !pattern.contains('*') {
+        return path.ends_with(pattern) || path == pattern;
+    }
+    let parts: Vec<&str> = pattern.splitn(2, '*').collect();
+    let prefix = parts[0];
+    let suffix = if parts.len() > 1 { parts[1] } else { "" };
+    path.starts_with(prefix)
+        && (suffix.is_empty() || path.ends_with(suffix))
+        && path.len() >= prefix.len() + suffix.len()
 }
 
 /// Runs the interactive AutoGPT CLI loop.
@@ -1251,16 +1590,22 @@ impl GenericAgent {
 ///   2. Reads the user's slash commands or prompts in a loop.
 ///   3. On a real prompt, builds a `Task` and calls `agent.execute()` - which contains
 ///      the full synthesize → plan → approve → execute → reflect → walkthrough pipeline.
+///   4. On follow-up prompts in the same session, passes the prior session context
+///      to `synthesize_followup_tasks` so the LLM works on top of existing code.
 ///
 /// Slash commands (`/help`, `/sessions`, `/models`, `/clear`, `/status`, `/workspace`,
 /// `/provider`) are handled here and never reach the executor.
-#[cfg(feature = "cli")]
+#[cfg(all(
+    feature = "cli",
+    any(
+        feature = "co",
+        feature = "oai",
+        feature = "gem",
+        feature = "cld",
+        feature = "xai"
+    )
+))]
 pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> anyhow::Result<()> {
-    use crate::cli::tui::{
-        print_banner, print_greeting, print_status_bar, render_help_table, render_input_box_hint,
-        render_warning_box,
-    };
-
     print_banner();
     print_greeting();
 
@@ -1276,6 +1621,8 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
 
     let session_mgr = SessionManager::default();
     session_mgr.ensure_dirs()?;
+
+    let mut active_session: Option<Session> = None;
 
     if let Some(id) = session_id {
         match session_mgr.load(id) {
@@ -1306,8 +1653,13 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
         }
     }
 
-    let workspace = std::env::var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| ".".to_string());
-    std::fs::create_dir_all(&workspace)?;
+    let workspace = env::var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| {
+        PathBuf::from(".")
+            .join("workspace")
+            .to_string_lossy()
+            .to_string()
+    });
+    fs::create_dir_all(&workspace)?;
 
     if matches!((std::env::current_dir(), dirs::home_dir()), (Ok(cwd), Some(home)) if cwd == home) {
         render_warning_box(
@@ -1317,10 +1669,10 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
         );
     }
 
-    let mut current_provider = crate::cli::models::default_provider();
-    let mut current_model = crate::cli::models::default_model(&current_provider);
-    let mut available_models = crate::cli::models::provider_models(&current_provider);
-    let mut current_model_idx = crate::cli::models::model_index(&available_models, &current_model);
+    let mut current_provider = default_provider();
+    let mut current_model = default_model(&current_provider);
+    let mut available_models = provider_models(&current_provider);
+    let mut current_model_idx = model_index(&available_models, &current_model);
 
     let mut agent = GenericAgent {
         yolo,
@@ -1382,7 +1734,7 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
         }
 
         if input.eq_ignore_ascii_case("/status") {
-            let cwd = std::env::current_dir()
+            let cwd = env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default();
             info!("{} {}", "Directory:".bright_cyan(), cwd.bright_white());
@@ -1436,10 +1788,9 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
                 current_provider = providers[n - 1].to_string();
                 agent.provider = current_provider.clone();
 
-                available_models = crate::cli::models::provider_models(&current_provider);
-                current_model = crate::cli::models::default_model(&current_provider);
-                current_model_idx =
-                    crate::cli::models::model_index(&available_models, &current_model);
+                available_models = provider_models(&current_provider);
+                current_model = default_model(&current_provider);
+                current_model_idx = model_index(&available_models, &current_model);
                 agent.model = current_model.clone();
 
                 print_success(&format!("Switched to provider: {current_provider}"));
@@ -1454,8 +1805,7 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
                 );
                 continue;
             }
-            let selected =
-                crate::cli::tui::render_model_selector(&available_models, current_model_idx);
+            let selected = render_model_selector(&available_models, current_model_idx);
             current_model_idx = selected;
             current_model = available_models[selected].id.clone();
             agent.model = current_model.clone();
@@ -1526,7 +1876,158 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
             continue;
         }
 
+        if let Some(ref prior) = active_session {
+            info!(
+                "  {} {}",
+                "↩".bright_cyan(),
+                format!("Follow-up on: {}", prior.title).bright_black()
+            );
+        }
+
         agent.agent.behavior = input.clone().into();
+
+        let workspace_path = PathBuf::from(&workspace);
+        let skills_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".autogpt")
+            .join("skills");
+        let skills = SkillStore::load_for_domain(&input, skills_dir).unwrap_or_else(|_| {
+            SkillStore::new(
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".autogpt")
+                    .join("skills"),
+            )
+        });
+        let skills_context = skills.to_prompt_context();
+
+        if let Some(ref prior) = active_session {
+            let snapshot = agent.scan_workspace(&workspace_path).await;
+            let tasks = match agent
+                .synthesize_followup_tasks(&input, prior, &skills_context, &snapshot)
+                .await
+            {
+                Ok(t) if !t.is_empty() => t,
+                Ok(_) => {
+                    print_error("LLM returned an empty follow-up task list.");
+                    continue;
+                }
+                Err(e) => {
+                    print_error(&format!("Follow-up synthesis failed: {e}"));
+                    continue;
+                }
+            };
+
+            print_section("📋 Follow-up Task Plan");
+            for t in &tasks {
+                print_task_item(&t.description, TuiTaskStatus::Pending);
+            }
+
+            if !yolo {
+                info!(
+                    "{}  Approve and execute these tasks? {} ",
+                    "?".bright_cyan().bold(),
+                    "(yes / no)".bright_black()
+                );
+                print!("> ");
+                io::stdout().flush()?;
+                let mut approval = String::new();
+                io::stdin().lock().read_line(&mut approval)?;
+                if !is_yes(approval.trim()) {
+                    print_warning("Tasks not approved.");
+                    continue;
+                }
+            }
+
+            let model = if agent.model.is_empty() {
+                "gemini-2.5-flash".to_string()
+            } else {
+                agent.model.clone()
+            };
+            let provider = if agent.provider.is_empty() {
+                "gemini".to_string()
+            } else {
+                agent.provider.clone()
+            };
+
+            let mut new_session = Session::new(&input, &workspace, &model, &provider);
+            new_session.add_message("user", &input);
+            new_session.set_tasks(tasks.clone());
+
+            let plan = prior.plan.clone().unwrap_or_default();
+            print_section("⚙️  Executing Follow-up Tasks");
+            let total = tasks.len();
+            let tasks_snap = tasks.clone();
+            for (idx, task_item) in tasks_snap.iter().enumerate() {
+                print_task_item(&task_item.description, TuiTaskStatus::InProgress);
+                new_session.update_task_status(idx, SessionTaskStatus::InProgress);
+
+                let completed_descs: Vec<String> = tasks_snap
+                    .iter()
+                    .take(idx)
+                    .map(|t| t.description.clone())
+                    .collect();
+                let completed_refs: Vec<&str> =
+                    completed_descs.iter().map(|s| s.as_str()).collect();
+
+                let reasoning = agent
+                    .reason_about_task(
+                        task_item,
+                        &plan,
+                        &completed_refs,
+                        idx + 1,
+                        total,
+                        &workspace,
+                    )
+                    .await;
+                new_session.add_reasoning(&reasoning.thought);
+
+                let results = agent
+                    .execute_task(
+                        &input,
+                        task_item,
+                        idx + 1,
+                        total,
+                        &plan,
+                        &completed_refs,
+                        &workspace_path,
+                        &mut new_session,
+                        &reasoning,
+                    )
+                    .await
+                    .unwrap_or_default();
+
+                let reflection = agent
+                    .reflect_on_task(task_item, &results, 0)
+                    .await
+                    .unwrap_or(ReflectionResult {
+                        outcome: ReflectionOutcome::Success,
+                        reasoning: "Assumed success.".into(),
+                        corrective_actions: vec![],
+                    });
+
+                match reflection.outcome {
+                    ReflectionOutcome::Success => {
+                        print_task_item(&task_item.description, TuiTaskStatus::Completed);
+                        new_session.update_task_status(idx, SessionTaskStatus::Completed);
+                    }
+                    _ => {
+                        print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                        new_session.update_task_status(idx, SessionTaskStatus::Skipped);
+                    }
+                }
+
+                session_mgr.save(&new_session)?;
+            }
+
+            let _ = agent
+                .build_and_verify(&workspace_path, &mut new_session, 3)
+                .await;
+
+            session_mgr.save(&new_session)?;
+            active_session = Some(new_session);
+            continue;
+        }
 
         let arc_agent: Arc<Mutex<Box<dyn AgentFunctions>>> =
             Arc::new(Mutex::new(Box::new(agent.clone())));
@@ -1554,7 +2055,14 @@ pub async fn run_generic_agent_loop(yolo: bool, session_id: Option<&str>) -> any
             res = autogpt.run() => {
                 interrupt_handle.abort();
                 match res {
-                    Ok(msg) => info!("{}", msg.bright_green()),
+                    Ok(msg) => {
+                        info!("{}", msg.bright_green());
+                        if let Ok(entries) = session_mgr.list()
+                            && let Some(entry) = entries.first()
+                                && let Ok(s) = session_mgr.load(&entry.id) {
+                                    active_session = Some(s);
+                            }
+                    }
                     Err(e) => print_error(&format!("Agent error: {e:?}")),
                 }
             }

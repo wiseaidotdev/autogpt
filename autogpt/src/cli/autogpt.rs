@@ -26,7 +26,7 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 #[cfg(feature = "cli")]
 fn styles() -> Styles {
     // Define styles for different CLI elements
-    clap::builder::styling::Styles::styled()
+    Styles::styled()
         .header(AnsiColor::Red.on_default() | Effects::BOLD)
         .usage(AnsiColor::Red.on_default() | Effects::BOLD)
         .literal(AnsiColor::Blue.on_default() | Effects::BOLD)

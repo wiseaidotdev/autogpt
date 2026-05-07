@@ -24,11 +24,13 @@ use {
     crate::traits::functions::Collaborate,
     anyhow::{Result, anyhow},
     async_trait::async_trait,
-    iac_rs::prelude::*,
+    futures::future,
+    iac_rs::prelude::{self, *},
     std::collections::VecDeque,
     std::sync::Arc,
     std::time::Duration,
     tokio::sync::Mutex,
+    tracing::debug,
 };
 
 /// Represents an agent with memory, tools, and other autonomous capabilities.
@@ -565,7 +567,7 @@ impl AgentGPT {
         let payload = serde_json::to_vec(&msg)?;
 
         for (peer_id, client) in &self.clients {
-            let mut message = iac_rs::prelude::Message {
+            let mut message = prelude::Message {
                 from: self.id.clone().into(),
                 to: peer_id.clone(),
                 msg_type: MessageType::Broadcast,
@@ -625,7 +627,7 @@ impl Network for AgentGPT {
         tokio::spawn(async move {
             loop {
                 for (peer_id, client) in &clients {
-                    let msg = iac_rs::prelude::Message::ping(&id, peer_id, 0);
+                    let msg = prelude::Message::ping(&id, peer_id, 0);
                     let result = {
                         let client = client.lock().await;
                         client.send(msg).await
@@ -660,7 +662,7 @@ impl Network for AgentGPT {
 
     async fn broadcast(&self, payload: &str) -> anyhow::Result<()> {
         let broadcast_tasks = self.clients.iter().map(|(peer_id, client)| {
-            let mut msg = iac_rs::prelude::Message::broadcast(&self.id, payload, 0);
+            let mut msg = prelude::Message::broadcast(&self.id, payload, 0);
             msg.to = peer_id.clone();
             let client = client.clone();
             async move {
@@ -679,7 +681,7 @@ impl Network for AgentGPT {
             }
         });
 
-        futures::future::join_all(broadcast_tasks).await;
+        future::join_all(broadcast_tasks).await;
         Ok(())
     }
 }

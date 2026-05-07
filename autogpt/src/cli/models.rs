@@ -5,6 +5,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(feature = "cli")]
+use std::env;
+
 /// A normalised model entry built entirely from crate-native type information.
 ///
 /// - `id`           → derived from the provider crate's `Display` or `serde(rename)`.
@@ -55,10 +58,10 @@ pub fn provider_models(provider: &str) -> Vec<ProviderModel> {
 #[cfg(feature = "cli")]
 fn get_env_model(provider: &str) -> Option<String> {
     let provider_env = format!("{}_MODEL", provider.to_uppercase());
-    if let Ok(m) = std::env::var(&provider_env) {
+    if let Ok(m) = env::var(&provider_env) {
         return Some(m);
     }
-    if let Ok(m) = std::env::var("MODEL") {
+    if let Ok(m) = env::var("MODEL") {
         return Some(m);
     }
     None
@@ -91,7 +94,7 @@ pub fn default_model(provider: &str) -> String {
 /// Accepted values: `gemini`, `openai`, `anthropic`, `xai`, `cohere`.
 #[cfg(feature = "cli")]
 pub fn default_provider() -> String {
-    if let Ok(p) = std::env::var("AI_PROVIDER") {
+    if let Ok(p) = env::var("AI_PROVIDER") {
         let p = p.trim().to_lowercase();
         if matches!(
             p.as_str(),

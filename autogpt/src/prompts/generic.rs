@@ -98,7 +98,9 @@ SYNTHESIS RULES
       GOOD: "Create FastAPI application entry point in `app/main.py` with CORS middleware."
       BAD:  "Set up the backend."
 
-6.  NO ASSUMPTIONS ABOUT EXISTING CODE: Assume a completely empty workspace directory.
+6.  WORKSPACE AWARENESS: If a workspace snapshot is provided below, DO NOT re-create files or
+    directories that already exist. Only generate tasks for what is missing or needs to change.
+    If no snapshot is provided, assume a completely empty workspace directory.
 
 7.  TOOL ALIGNMENT: Only include tasks accomplishable via file creation, directory creation,
     command execution, or git commits.
@@ -112,6 +114,9 @@ User request: {PROMPT}
 Previous conversation context (if resuming a session):
 {HISTORY}
 
+Current workspace contents (if already initialised):
+{WORKSPACE_SNAPSHOT}
+
 Previously learned patterns for similar tasks (incorporate to avoid past mistakes):
 {SKILLS_CONTEXT}
 
@@ -120,6 +125,56 @@ OUTPUT
 ═══════════════════════════════════════════════════════════════════════════════════════════════════
 
 Generate the numbered task list now. No preamble, no suffix. Only the numbered list.
+"#;
+
+/// Prompt for synthesizing a delta task list for a follow-up request in an ongoing session.
+///
+/// Used when the user sends a second prompt in the same REPL session. The LLM is given the
+/// full prior context and must emit only the _new_ tasks required to satisfy the new request,
+/// without re-scaffolding anything that was already built.
+pub(crate) const FOLLOWUP_SYNTHESIS_PROMPT: &str = r#"
+You are AutoGPT's task synthesis engine for FOLLOW-UP REQUESTS. The user already has an
+existing project in the workspace. Your job is to emit only the specific, targeted tasks
+needed to satisfy the user's new request, without re-creating, re-scaffolding, or
+overwriting anything that has already been built.
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+CRITICAL RULES
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+1.  DO NOT re-create directories or files that already exist in the workspace snapshot.
+2.  DO NOT re-initialize the project. DO NOT re-write pyproject.toml, package.json, Cargo.toml,
+    requirements.txt, README.md unless the user's request specifically targets those files.
+3.  PREFER PatchFile tasks over WriteFile tasks. The agent will read the file first and apply
+    surgical in-place edits.
+4.  If the new request is unclear or underspecified, err on the side of doing less rather than more.
+5.  Generate between 1 and 8 tasks. Never more than 8.
+6.  OUTPUT FORMAT: plain numbered list only. No headers, no preamble, no commentary.
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+PRIOR SESSION CONTEXT
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+What was already built:
+{PRIOR_CONTEXT}
+
+Current workspace file tree:
+{WORKSPACE_SNAPSHOT}
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+NEW USER REQUEST
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+{USER_REQUEST}
+
+Previously learned patterns for this domain:
+{SKILLS_CONTEXT}
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+OUTPUT
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+Generate the numbered delta task list now. No preamble, no suffix.
 "#;
 
 /// Prompt for generating a detailed markdown implementation plan.

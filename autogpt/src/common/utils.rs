@@ -72,26 +72,28 @@
 //! ```
 
 #[cfg(feature = "cli")]
-use crate::agents::agent::AgentGPT;
+pub use crate::agents::agent::AgentGPT;
 #[allow(unused_imports)]
-use crate::traits::agent::Agent;
-#[cfg(feature = "cli")]
-use colored::Colorize;
-#[cfg(feature = "cli")]
-use indicatif::{ProgressBar, ProgressStyle};
+pub use crate::traits::agent::Agent;
+use chrono::prelude::*;
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::env::var;
 #[cfg(feature = "cli")]
-use std::{io, io::Read, process::Command, process::Stdio};
-#[cfg(feature = "cli")]
-use webbrowser::{Browser, BrowserOptions, open_browser_with_options};
-#[cfg(feature = "cli")]
 use {
+    colored::Colorize,
     crates_io_api::AsyncClient,
+    indicatif::{ProgressBar, ProgressStyle},
     semver::Version,
-    std::io::Write,
+    std::{
+        error,
+        io::{self, Read, Write},
+        process::{Child, Command, Stdio},
+        time::Duration,
+    },
     tracing::{Event, Subscriber, error, field, info, warn},
     tracing_appender::rolling,
     tracing_subscriber::Layer,
@@ -100,41 +102,39 @@ use {
     tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt,
     tracing_subscriber::registry::LookupSpan,
     tracing_subscriber::{filter, fmt},
+    webbrowser::{Browser, BrowserOptions, open_browser_with_options},
 };
 
+#[cfg(feature = "xai")]
+use x_ai::{chat_compl::Message as XaiMessage, client::XaiClient, traits::ClientConfig};
+
 #[cfg(feature = "gem")]
-#[allow(unused_imports)]
-use gems::{
+pub use gems::{
     Client as GeminiClient,
     messages::{Content, Message as GeminiMessage},
     models::Model as GeminiModel,
     traits::CTrait,
 };
+
 #[cfg(feature = "oai")]
-#[allow(unused_imports)]
-use openai_dive::v1::{
+pub use openai_dive::v1::{
     api::Client as OpenAIClient,
     models::Gpt4Model,
     resources::chat::{ChatMessage, ChatMessageContent},
 };
 
 #[cfg(feature = "cld")]
-use anthropic_ai_sdk::{
+pub use anthropic_ai_sdk::{
     client::AnthropicClient,
-    types::message::{Message as AnthMessage, MessageError},
+    types::message::{Message as AnthMessage, MessageError, Role},
 };
 
-use chrono::prelude::*;
-use std::collections::HashMap;
-#[cfg(feature = "xai")]
-use x_ai::{chat_compl::Message as XaiMessage, client::XaiClient, traits::ClientConfig};
-
 #[cfg(feature = "co")]
-use cohere_rust::Cohere;
+use {cohere_rust::Cohere, std::ops, std::sync::Arc};
 
 #[cfg(feature = "co")]
 #[derive(Clone)]
-pub struct CohereClient(pub std::sync::Arc<Cohere>);
+pub struct CohereClient(pub Arc<Cohere>);
 
 #[cfg(feature = "co")]
 impl std::fmt::Debug for CohereClient {
@@ -144,16 +144,12 @@ impl std::fmt::Debug for CohereClient {
 }
 
 #[cfg(feature = "co")]
-impl std::ops::Deref for CohereClient {
+impl ops::Deref for CohereClient {
     type Target = Cohere;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-
-use derivative::Derivative;
-#[cfg(feature = "cli")]
-use std::time::Duration;
 
 /// Enum representing supported AI clients.
 #[derive(Debug, Clone)]
@@ -191,7 +187,7 @@ impl ClientType {
 
         #[cfg(feature = "co")]
         if provider == "cohere" {
-            let client = CohereClient(std::sync::Arc::new(Cohere::default()));
+            let client = CohereClient(Arc::new(Cohere::default()));
             return ClientType::Cohere(client);
         }
 
@@ -454,7 +450,7 @@ pub async fn run_code(
     language: &str,
     path: &str,
     browse: bool,
-) -> Result<Option<std::process::Child>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<Child>, Box<dyn error::Error + Send + Sync>> {
     if browse {
         let _ = open_browser_with_options(
             Browser::Default,

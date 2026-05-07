@@ -11,6 +11,7 @@ use {
     chrono::Utc,
     serde::{Deserialize, Serialize},
     std::collections::HashMap,
+    std::fs,
     std::path::PathBuf,
 };
 
@@ -52,16 +53,16 @@ impl SkillStore {
 
     /// Loads every `*.toml` skill file from `store_dir` into memory.
     pub fn load(store_dir: PathBuf) -> Result<Self> {
-        std::fs::create_dir_all(&store_dir)?;
+        fs::create_dir_all(&store_dir)?;
         let mut skills = HashMap::new();
 
-        for entry in std::fs::read_dir(&store_dir)? {
+        for entry in fs::read_dir(&store_dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("toml") {
                 continue;
             }
-            let raw = std::fs::read_to_string(&path)?;
+            let raw = fs::read_to_string(&path)?;
             if let Ok(skill) = toml_edit::de::from_str::<Skill>(&raw) {
                 skills.insert(skill.domain.clone(), skill);
             }
@@ -118,7 +119,7 @@ impl SkillStore {
 
         let path = self.store_dir.join(format!("{domain}.toml"));
         let raw = toml_edit::ser::to_string_pretty(skill)?;
-        std::fs::write(path, raw)?;
+        fs::write(path, raw)?;
 
         Ok(())
     }

@@ -12,7 +12,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 #[cfg(feature = "cli")]
 use std::time::Duration;
 #[cfg(feature = "cli")]
-use termimad::MadSkin;
+use termimad::{MadSkin, crossterm::style::Color};
 #[cfg(feature = "cli")]
 use tracing::{error, info, warn};
 
@@ -214,11 +214,9 @@ pub fn render_model_selector(models: &[ProviderModel], current_idx: usize) -> us
 #[cfg(feature = "cli")]
 pub fn render_markdown(content: &str) {
     let mut skin = MadSkin::default();
-    skin.code_block
-        .set_fg(termimad::crossterm::style::Color::Cyan);
-    skin.inline_code
-        .set_fg(termimad::crossterm::style::Color::Cyan);
-    skin.bold.set_fg(termimad::crossterm::style::Color::White);
+    skin.code_block.set_fg(Color::Cyan);
+    skin.inline_code.set_fg(Color::Cyan);
+    skin.bold.set_fg(Color::White);
     skin.print_text(content);
 }
 
