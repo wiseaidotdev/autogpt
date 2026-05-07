@@ -28,8 +28,8 @@ Download the latest pre-built executables directly from GitHub Releases without 
 
 | Platform       | Download                                                                                    |
 | -------------- | ------------------------------------------------------------------------------------------- |
-| Linux x86-64   | [autogpt](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.0/autogpt)         |
-| Windows x86-64 | [autogpt.exe](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.0/autogpt.exe) |
+| Linux x86-64   | [autogpt](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.1/autogpt)         |
+| Windows x86-64 | [autogpt.exe](https://github.com/wiseaidotdev/autogpt/releases/download/v0.3.1/autogpt.exe) |
 
 ## Using Docker
 
