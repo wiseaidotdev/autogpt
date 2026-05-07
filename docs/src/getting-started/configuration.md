@@ -70,8 +70,8 @@ GenericGPT maintains persistent state in a hidden directory inside the active wo
 
 ```
 .autogpt/
-├── sessions/               # Saved conversation sessions (YAML)
-│   ├── <uuid>.yaml
+├── sessions/          # Markdown conversation snapshots, auto-saved after every response
+│   ├── <uuid>.md
 │   └── ...
 └── skills/                 # Learned lessons, injected on future sessions (TOML)
     ├── rust.toml

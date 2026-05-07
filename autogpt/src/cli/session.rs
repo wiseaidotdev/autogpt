@@ -201,7 +201,7 @@ impl Session {
                 .map(|f| format!("  - {} ({})", f.path, f.action))
                 .collect();
             let suffix = if self.files_created.len() > 30 {
-                format!("\n  … and {} more", self.files_created.len() - 30)
+                format!("\n  ... and {} more", self.files_created.len() - 30)
             } else {
                 String::new()
             };

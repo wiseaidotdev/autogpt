@@ -12,6 +12,12 @@ To install AutoGPT CLI via Cargo, execute the following command:
 cargo install autogpt --all-features
 ```
 
+To install with specific features (e.g., MoP and Gemini):
+
+```sh
+cargo install autogpt --features "cli,gem,mop"
+```
+
 ### 🐳 Using Docker
 
 To install and run the AutoGPT CLI via Docker, use the following command:
@@ -60,6 +66,12 @@ To run AutoGPT CLI via Cargo, execute:
 
 ```sh
 cargo run --all-features --bin autogpt
+```
+
+To run with Mixture of Providers:
+
+```sh
+cargo run --features "cli,gem,oai,mop" --bin autogpt -- --mixture
 ```
 
 ### 🐳 Using Docker
@@ -383,7 +395,13 @@ To configure the CLI and or the SDK environment, follow these steps:
    export AI_PROVIDER=cohere
    ```
 
-   Make sure to enable the corresponding Cargo features (`gem`, `oai`, `xai`, `cld`, or `co`) when building your project.
+   Make sure to enable the corresponding Cargo features (`gem`, `oai`, `xai`, `cld`, `co`, or `mop`) when building your project.
+
+### 🔀 Mixture of Providers (MoP) Configuration
+
+When using the `--mixture` flag, AutoGPT will attempt to fan out prompts to **every** provider that is compiled in (via feature flags) and has its corresponding API key set in the environment.
+
+Example: If you have `GEMINI_API_KEY` and `OPENAI_API_KEY` set, and build with `--features gem,oai,mop`, running with `--mixture` will automatically use both providers for every query.
 
 1. **API Key Configuration**: Set the API key for your chosen provider:
 

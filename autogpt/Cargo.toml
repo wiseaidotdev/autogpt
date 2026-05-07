@@ -13,7 +13,7 @@ homepage = "https://wiseai.dev"
 readme = "README.md"
 categories = ["science"]
 keywords = ["agi", "ai", "machine-learning", "llm", "stable-diffusion"]
-exclude = ["/workspace", "/examples"]
+exclude = ["/workspace", "/examples", "/docs"]
 
 [[bin]]
 name = "autogpt"
@@ -71,6 +71,7 @@ bytes = "1.11.1"
 [features]
 default = []
 gpt = []
+mop = []
 img = ["getimg"]
 git = ["git2"]
 gem = ["gems"]

@@ -553,6 +553,11 @@ where
 
 #[cfg(feature = "cli")]
 pub fn setup_logging() -> anyhow::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        console::set_colors_enabled(true);
+        console::set_colors_enabled_stderr(true);
+    }
     colored::control::set_override(true);
     let file_appender = rolling::daily("logs", "autogpt_log");
 

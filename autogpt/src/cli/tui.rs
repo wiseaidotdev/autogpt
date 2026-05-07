@@ -119,7 +119,7 @@ pub fn render_warning_box(message: &str) {
 #[cfg(feature = "cli")]
 pub fn render_update_banner(current: &str, latest: &str) {
     let msg = format!(
-        "AutoGPT update available! {} → {}\nRun `cargo install autogpt` to update.",
+        "AutoGPT update available! {} → {}\nRun `cargo install autogpt --all-features` to update.",
         current, latest
     );
     render_warning_box(&msg);
