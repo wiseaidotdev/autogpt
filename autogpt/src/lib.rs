@@ -26,7 +26,7 @@ pub mod collaboration;
 #[cfg(feature = "cli")]
 pub mod cli;
 
-#[cfg(all(feature = "cli", feature = "net"))]
+#[cfg(all(feature = "cli", feature = "net", feature = "gpt"))]
 pub mod orchestrator;
 
 #[cfg(feature = "cli")]

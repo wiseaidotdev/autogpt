@@ -49,7 +49,7 @@ That is the entire program. AutoGPT initializes the LLM client, constructs the t
 <div class="feature-card">
 <span class="icon">🌐</span>
 <h3>Multi-Provider LLMs</h3>
-<p>Gemini, OpenAI, Anthropic Claude, XAI Grok, and Cohere, switch with a single env var.</p>
+<p>Gemini, OpenAI, Anthropic Claude, XAI Grok, Cohere, and HuggingFace, switch with a single env var.</p>
 </div>
 <div class="feature-card">
 <span class="icon">🔒</span>
@@ -93,6 +93,7 @@ flowchart TD
         OpenAI["OpenAI"]
         Claude["Claude"]
         XAI["XAI"]
+        HF["HuggingFace"]
     end
 
     DB[("🧠 Pinecone\nVector DB")]

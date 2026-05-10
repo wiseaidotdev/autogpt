@@ -15,7 +15,7 @@ use std::{env, io};
 use tracing::{error, warn};
 use uuid::Uuid;
 
-async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<f64> {
+async fn embed_text(client: &mut ClientType, _content: Cow<'static, str>) -> Vec<f64> {
     match client {
         #[cfg(feature = "gem")]
         ClientType::Gemini(gem_client) => {
@@ -28,7 +28,7 @@ async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<
             let params = EmbeddingBuilder::default()
                 .model(Model::Embedding001)
                 .input(Message::User {
-                    content: Content::Text(content.into()),
+                    content: Content::Text(_content.into()),
                     name: None,
                 })
                 .build()
@@ -61,7 +61,7 @@ async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<
 
             let parameters = EmbeddingParametersBuilder::default()
                 .model(EmbeddingModel::TextEmbedding3Small.to_string())
-                .input(EmbeddingInput::String(content.to_string()))
+                .input(EmbeddingInput::String(_content.to_string()))
                 .encoding_format(EmbeddingEncodingFormat::Float)
                 .build()
                 .unwrap();
@@ -94,7 +94,7 @@ async fn embed_text(client: &mut ClientType, content: Cow<'static, str>) -> Vec<
 
             let parameters = EmbedRequest {
                 model: Some(EmbedModel::EnglishV3),
-                texts: &[content.to_string()],
+                texts: &[_content.to_string()],
                 truncate: Truncate::None,
             };
 
@@ -198,7 +198,7 @@ pub async fn save_long_term_memory(
 
 pub async fn load_long_term_memory(agent_id: Cow<'static, str>) -> Result<Vec<Message>> {
     let config = PineconeClientConfig {
-        api_key: Some(env::var("PINECONE_API_KEY").unwrap()),
+        api_key: Some(env::var("PINECONE_API_KEY").unwrap_or_default()),
         ..Default::default()
     };
 

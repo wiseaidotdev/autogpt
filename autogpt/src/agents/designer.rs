@@ -50,6 +50,10 @@ use crate::common::utils::{
     Capability, ClientType, ContextManager, Knowledge, Message, Persona, Planner, Reflection,
     Status, Task, TaskScheduler, Tool, similarity,
 };
+#[allow(unused_imports)]
+#[cfg(feature = "hf")]
+#[allow(unused_imports)]
+use crate::prelude::hf_model_from_str;
 #[allow(unused)]
 use crate::prompts::designer::{IMGGET_PROMPT, WEB_DESIGNER_PROMPT};
 use crate::traits::agent::Agent;
@@ -78,11 +82,7 @@ use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
 
 #[cfg(feature = "gem")]
 use gems::{
-    chat::ChatBuilder,
-    imagen::ImageGenBuilder,
     messages::{Content, Message as GemMessage},
-    models::Model,
-    stream::StreamBuilder,
     traits::CTrait,
     utils::load_and_encode_image,
     vision::VisionBuilder,
@@ -93,7 +93,9 @@ use gems::{
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
 
@@ -103,17 +105,11 @@ use x_ai::{
     traits::ChatCompletionsFetcher,
 };
 
-#[cfg(feature = "cld")]
-use anthropic_ai_sdk::types::message::{
-    ContentBlock, CreateMessageParams, Message as AnthMessage, MessageClient,
-    RequiredMessageParams, Role,
-};
-
-use derivative::Derivative;
+#[cfg(feature = "co")]
+use {cohere_rust::api::GenerateModel, cohere_rust::api::generate::GenerateRequest};
 
 /// Struct representing a DesignerGPT, which manages design-related tasks using Gemini or OpenAI API.
-#[derive(Derivative, Auto)]
-#[derivative(Debug, Clone)]
+#[derive(Debug, Clone, Auto)]
 pub struct DesignerGPT {
     /// Represents the workspace directory path for DesignerGPT.
     workspace: Cow<'static, str>,
@@ -259,21 +255,22 @@ impl DesignerGPT {
         #[cfg(feature = "img")]
         let mut text_response = String::new();
 
-        // #[cfg(feature = "img")]
-        // {
-        //     text_response = self
-        //         .img_client
-        //         .generate_image_from_text(
-        //             &text_prompt,
-        //             1024,
-        //             1024,
-        //             5,
-        //             "jpeg",
-        //             negative_prompt,
-        //             Some(512),
-        //         )
-        //         .await?.image;
-        // }
+        #[cfg(feature = "img")]
+        {
+            text_response = self
+                .img_client
+                .generate_image_from_text(
+                    &text_prompt,
+                    1024,
+                    1024,
+                    5,
+                    "jpeg",
+                    negative_prompt,
+                    Some(512),
+                )
+                .await?
+                .image;
+        }
 
         #[cfg(feature = "img")]
         save_image(&text_response, &img_path).unwrap();
@@ -640,9 +637,6 @@ impl DesignerGPT {
 
             #[cfg(feature = "co")]
             ClientType::Cohere(co_client) => {
-                use cohere_rust::api::GenerateModel;
-                use cohere_rust::api::generate::GenerateRequest;
-
                 let prompt_text = format!("{WEB_DESIGNER_PROMPT}\n\nDescribe the image.");
                 let gen_request = GenerateRequest {
                     prompt: &prompt_text,
@@ -668,10 +662,89 @@ impl DesignerGPT {
                 }
             }
 
+            #[cfg(feature = "hf")]
+            ClientType::HuggingFace(hf_client) => {
+                let model_id = crate::common::utils::hf_model_from_str(&hf_client.model);
+                let result = hf_client
+                    .client
+                    .inference()
+                    .create("What is in this image?", model_id)
+                    .await;
+
+                match result {
+                    Ok(inference_res) => {
+                        let response_text = match inference_res {
+                            api_huggingface::components::inference_shared::InferenceResponse::Single(output) => {
+                                output.generated_text
+                            }
+                            api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
+                                batch.pop().map(|o| o.generated_text).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(format!(
+                                "Generated image description: {response_text}"
+                            )),
+                        });
+
+                        #[cfg(feature = "mem")]
+                        {
+                            let _ = self
+                                .save_ltm(Message {
+                                    role: Cow::Borrowed("assistant"),
+                                    content: Cow::Owned(format!(
+                                        "Generated image description: {response_text}"
+                                    )),
+                                })
+                                .await;
+                        }
+
+                        #[cfg(debug_assertions)]
+                        debug!(
+                            "[*] {:?}: Got HF Output: {:?}",
+                            self.agent.persona(),
+                            response_text
+                        );
+
+                        response_text
+                    }
+
+                    Err(err) => {
+                        let err_msg = format!("Error generating image description: {err}");
+
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(err_msg.clone()),
+                        });
+
+                        #[cfg(feature = "mem")]
+                        {
+                            let _ = self
+                                .save_ltm(Message {
+                                    role: Cow::Borrowed("assistant"),
+                                    content: Cow::Owned(err_msg.clone()),
+                                })
+                                .await;
+                        }
+
+                        Default::default()
+                    }
+                }
+            }
+
+            #[cfg(feature = "cld")]
+            ClientType::Anthropic(_client) => {
+                // TODO: Implement this
+                String::new()
+            }
+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(anyhow!(
-                    "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                    "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                 ));
             }
         };

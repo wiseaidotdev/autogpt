@@ -11,11 +11,11 @@ Unlike the specialised agents (BackendGPT, FrontendGPT, etc.) that each own a si
 | **Reasoning pre-step** | Plans before acting; emits a structured internal monologue before every task              |
 | **File tooling**       | `CreateFile`, `WriteFile`, `PatchFile`, `ReadFile`, `AppendFile`, `ListDir`, `FindInFile` |
 | **Shell execution**    | `RunCommand` runs arbitrary shell commands inside the workspace                           |
-| **Build-and-verify**   | Detects the build system (`cargo`, `npm`, `python`, ...) and iterates on errors             |
+| **Build-and-verify**   | Detects the build system (`cargo`, `npm`, `python`, ...) and iterates on errors           |
 | **Git commits**        | `GitCommit` action commits changes with a generated message                               |
 | **Persistent skills**  | Learns lessons across sessions and injects them into future prompts                       |
 | **Session continuity** | Full conversation history is restored when you resume a session                           |
-| **Multi-provider**     | Switches between Gemini, OpenAI, Anthropic, xAI, and Cohere at runtime                    |
+| **Multi-provider**     | Switches between Gemini, OpenAI, Anthropic, xAI, Cohere, and HuggingFace at runtime       |
 
 ## The `.autogpt` Directory
 
@@ -111,6 +111,7 @@ flowchart TD
 | `ANTHROPIC_MODEL`   | _(first in list)_   | Override the active Anthropic model    |
 | `XAI_MODEL`         | _(first in list)_   | Override the active xAI model          |
 | `COHERE_MODEL`      | _(first in list)_   | Override the active Cohere model       |
+| `HF_MODEL`          | _(first in list)_   | Override the active HuggingFace model  |
 | `MODEL`             | _(global fallback)_ | Global model override for any provider |
 
 ## Feature Flags

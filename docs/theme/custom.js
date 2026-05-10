@@ -52,5 +52,22 @@
         }
       });
     });
+
+    const currentUrl = window.location.href
+      .split("#")[0]
+      .replace(/\/$/, "")
+      .replace(/\.html$/, "");
+    document.querySelectorAll(".sidebar a").forEach(function (link) {
+      const linkUrl = link.href
+        .split("#")[0]
+        .replace(/\/$/, "")
+        .replace(/\.html$/, "");
+      if (linkUrl === currentUrl) {
+        document
+          .querySelectorAll(".chapter li.chapter-item.active")
+          .forEach((li) => li.classList.remove("active"));
+        link.parentElement.classList.add("active");
+      }
+    });
   });
 })();

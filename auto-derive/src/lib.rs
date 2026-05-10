@@ -172,6 +172,27 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }
 
             async fn generate(&mut self, request: &str) -> Result<String> {
+                #[cfg(feature = "gem")]
+                use gems::{chat::ChatBuilder, messages::Content, traits::CTrait};
+
+                #[cfg(feature = "oai")]
+                use openai_dive::v1::{models::Gpt4Model, resources::chat::{ChatMessage, ChatMessageContent, ChatCompletionResponseFormat}};
+
+                #[cfg(feature = "cld")]
+                use anthropic_ai_sdk::types::message::{
+                    ContentBlock, CreateMessageParams, Message as AnthMessage,
+                    MessageClient, RequiredMessageParams, Role,
+                };
+
+                #[cfg(feature = "xai")]
+                use x_ai::chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage};
+
+                #[cfg(feature = "co")]
+                use cohere_rust::api::chat::ChatRequest;
+
+                #[cfg(feature = "hf")]
+                use serde_json::{Value as JsonValue, json};
+
                 match &mut self.client {
                     #[cfg(feature = "gem")]
                     ClientType::Gemini(gem_client) => {
@@ -188,6 +209,8 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[cfg(feature = "oai")]
                     ClientType::OpenAI(oai_client) => {
+                        use openai_dive::v1::resources::chat::ChatCompletionParametersBuilder;
+
                         let parameters = ChatCompletionParametersBuilder::default()
                             .model(Gpt4Model::Gpt4O.to_string())
                             .messages(vec![ChatMessage::User {
@@ -216,7 +239,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     #[cfg(feature = "cld")]
                     ClientType::Anthropic(client) => {
                         let body = CreateMessageParams::new(RequiredMessageParams {
-                            model: "claude-3-7-sonnet-latest".to_string(),
+                            model: "claude-opus-4-6".to_string(),
                             messages: vec![AnthMessage::new_text(Role::User, request.to_string())],
                             max_tokens: 1024,
                         });
@@ -235,11 +258,13 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[cfg(feature = "xai")]
                     ClientType::Xai(xai_client) => {
+                        use x_ai::traits::ChatCompletionsFetcher;
+
                         let messages = vec![XaiMessage::text("user", request)];
 
                         let rb = ChatCompletionsRequestBuilder::new(
                             xai_client.clone(),
-                            "grok-beta".into(),
+                            "grok-4".into(),
                             messages,
                         )
                         .temperature(0.0)
@@ -252,9 +277,6 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[cfg(feature = "co")]
                     ClientType::Cohere(co_client) => {
-                        use cohere_rust::api::chat::ChatRequest;
-                        use cohere_rust::api::GenerateModel;
-
                         let chat_request = ChatRequest {
                             message: request,
                             ..Default::default()
@@ -278,16 +300,41 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(full_text)
                     }
 
+                    #[cfg(feature = "hf")]
+                    ClientType::HuggingFace(hf_client) => {
+                        let model_id = hf_model_from_str(&hf_client.model);
+                        let result = hf_client
+                            .client
+                            .inference()
+                            .create(request, model_id)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("HuggingFace inference failed: {}", e))?;
+                        let text = match result {
+                            api_huggingface::components::inference_shared::InferenceResponse::Single(output) => output.generated_text,
+                            api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
+                                batch.pop().map(|o| o.generated_text).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+                        Ok(text)
+                    }
+
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
-                            "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                            "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }
             }
 
             async fn imagen(&mut self, request: &str) -> Result<Vec<u8>> {
+                #[cfg(feature = "gem")]
+                use gems::{imagen::ImageGenBuilder, messages::Content, models::Model, traits::CTrait};
+
+                #[cfg(feature = "hf")]
+                use serde_json::json;
+
                 match &mut self.client {
                     #[cfg(feature = "gem")]
                     ClientType::Gemini(gem_client) => {
@@ -331,16 +378,67 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(Default::default())
                     }
 
+                    #[cfg(feature = "hf")]
+                    ClientType::HuggingFace(hf_client) => {
+                        let model_id = hf_model_from_str(&hf_client.model);
+                        let result = hf_client
+                            .client
+                            .inference()
+                            .create(request, model_id)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("HuggingFace imagen failed: {}", e))?;
+                        let text = match result {
+                            api_huggingface::components::inference_shared::InferenceResponse::Single(output) => output.generated_text,
+                            api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
+                                batch.pop().map(|o| o.generated_text).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+                        Ok(text.into_bytes())
+                    }
+
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
-                            "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                            "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }
             }
 
             async fn stream(&mut self, request: &str) -> Result<ReqResponse> {
+                #[cfg(feature = "gem")]
+                use gems::{messages::Content, models::Model, stream::StreamBuilder, traits::CTrait};
+
+                #[cfg(any(feature = "oai", feature = "cld", feature = "hf"))]
+                use futures::StreamExt;
+
+                #[cfg(feature = "oai")]
+                use {
+                    openai_dive::v1::resources::chat::{
+                        ChatCompletionParametersBuilder, ChatMessage, ChatMessageContent,
+                    },
+                };
+
+                #[cfg(feature = "cld")]
+                use {
+                    anthropic_ai_sdk::types::message::{
+                        ContentBlockDelta, CreateMessageParams, Message as AnthMessage,
+                        MessageClient, RequiredMessageParams, Role, StreamEvent,
+                    },
+                };
+
+                #[cfg(feature = "xai")]
+                use {
+                    x_ai::chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
+                    x_ai::traits::ClientConfig,
+                };
+
+                #[cfg(feature = "hf")]
+                use {
+                    serde_json::{Value as JsonValue, json},
+                };
+
                 let request_owned = request.to_string();
                 match &mut self.client {
                     #[cfg(feature = "gem")]
@@ -416,8 +514,6 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
 
                         tokio::spawn(async move {
-                            use futures::StreamExt;
-
                             let parameters =
                                 ChatCompletionParametersBuilder::default()
                                     .model("gpt-5")
@@ -473,8 +569,6 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
 
                         tokio::spawn(async move {
-                            use futures::StreamExt;
-
                             let body = CreateMessageParams::new(
                                 RequiredMessageParams {
                                     model: "claude-opus-4-6".to_string(),
@@ -491,17 +585,8 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                 client.create_message_streaming(&body).await
                             {
                                 while let Some(event_result) = stream.next().await {
-                                    if let Ok(
-                                        anthropic_ai_sdk::types::message::StreamEvent::ContentBlockDelta {
-                                            delta,
-                                            ..
-                                        },
-                                    ) = event_result
-                                    {
-                                        if let anthropic_ai_sdk::types::message::ContentBlockDelta::TextDelta {
-                                            text,
-                                        } = delta
-                                        {
+                                    if let Ok(StreamEvent::ContentBlockDelta { delta, .. }) = event_result {
+                                        if let ContentBlockDelta::TextDelta { text } = delta {
                                             let _ = tx.send(text).await;
                                         }
                                     }
@@ -514,10 +599,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[cfg(feature = "xai")]
                     ClientType::Xai(xai_client) => {
-                        use x_ai::traits::ClientConfig;
-
-                        let messages =
-                            vec![XaiMessage::text("user", request_owned)];
+                        let messages = vec![XaiMessage::text("user", request_owned)];
                         let req = ChatCompletionsRequestBuilder::new(
                             xai_client.clone(),
                             "grok-4".into(),
@@ -526,7 +608,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         .stream(true)
                         .build()?;
 
-                        let resp = x_ai::traits::ClientConfig::request(
+                        let resp = ClientConfig::request(
                             &*xai_client,
                             reqwest::Method::POST,
                             "chat/completions",
@@ -618,11 +700,52 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(ReqResponse(Some(rx)))
                     }
 
+                    #[cfg(feature = "hf")]
+                    ClientType::HuggingFace(hf_client) => {
+                        let model_id = hf_model_from_str(&hf_client.model);
+                        let (tx, rx) = tokio::sync::mpsc::channel::<String>(256);
+                        let client = hf_client.client.clone();
+                        let model_id_owned = model_id.to_string();
+                        let request_owned_clone = request_owned.clone();
+
+                        tokio::spawn(async move {
+                            match client
+                                .inference()
+                                .create(&request_owned_clone, &model_id_owned)
+                                .await
+                            {
+                                Ok(result) => {
+                                    use api_huggingface::components::inference_shared::InferenceResponse;
+                                    let text = match result {
+                                        InferenceResponse::Single(o) => o.generated_text,
+                                        InferenceResponse::Batch(mut v) => {
+                                            v.pop().map(|o| o.generated_text).unwrap_or_default()
+                                        }
+                                        _ => String::new(),
+                                    };
+                                    for word in text.split_whitespace() {
+                                        let _ = tx.send(format!("{word} ")).await;
+                                    }
+                                }
+                                Err(e) => {
+                                    let _ = tx
+                                        .send(format!("[HuggingFace error: {}]", e))
+                                        .await;
+                                }
+                            }
+                        });
+
+                        Ok(ReqResponse(Some(rx)))
+                    }
+
+
+
+
                     #[allow(unreachable_patterns)]
                     _ => {
                         return Err(anyhow!(
                             "No valid AI client configured. \
-                             Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                             Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
                 }

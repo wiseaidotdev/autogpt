@@ -34,6 +34,10 @@ use crate::common::utils::{
     Capability, ClientType, ContextManager, Knowledge, Persona, Planner, Reflection, Status, Task,
     TaskScheduler, Tool,
 };
+#[allow(unused_imports)]
+#[cfg(feature = "hf")]
+#[allow(unused_imports)]
+use crate::prelude::hf_model_from_str;
 use crate::prelude::*;
 use crate::traits::agent::Agent;
 use anyhow::Result;

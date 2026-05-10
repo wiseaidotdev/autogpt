@@ -20,6 +20,10 @@ use crate::common::utils::{
     Capability, ClientType, ContextManager, Knowledge, Message, Persona, Planner, Reflection,
     Status, Task, TaskScheduler, Tool,
 };
+#[allow(unused_imports)]
+#[cfg(feature = "hf")]
+#[allow(unused_imports)]
+use crate::prelude::hf_model_from_str;
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Executor, Functions};
 use async_trait::async_trait;
@@ -33,35 +37,16 @@ use {
     crate::common::memory::save_long_term_memory,
 };
 
-#[cfg(feature = "oai")]
-use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
-
-#[cfg(feature = "gem")]
-use gems::{
-    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
-    stream::StreamBuilder, traits::CTrait,
-};
-
 #[cfg(any(
     feature = "co",
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
-
-#[cfg(feature = "xai")]
-use x_ai::{
-    chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
-    traits::ChatCompletionsFetcher,
-};
-
-#[cfg(feature = "cld")]
-use anthropic_ai_sdk::types::message::{
-    ContentBlock, CreateMessageParams, Message as AnthMessage, MessageClient,
-    RequiredMessageParams, Role,
-};
 
 /// Struct representing GitGPT, a thread-safe Git-aware task executor integrated with a GPT agent.
 #[allow(dead_code)]

@@ -6,7 +6,7 @@ title = "AutoGPT: Pure Rust AI Agentic Framework."
 description = "Official documentation for AutoGPT, a pure Rust framework for building blazingly fast, multimodal, zero-shot AI agents."
 
 [output.html]
-additional-css = ["theme/main.css", "theme/custom.css"]
+additional-css = ["theme/fonts.css", "theme/main.css", "theme/custom.css"]
 additional-js = ["theme/custom.js", "mermaid/mermaid.min.js", "mermaid/mermaid-init.js"]
 edit-url-template = "https://github.com/wiseaidotdev/autogpt/edit/main/docs/{path}"
 git-repository-url = "https://github.com/wiseaidotdev/autogpt"

@@ -15,19 +15,19 @@ exclude = ["assets", "tests", "benches"]
 [dependencies]
 anyhow = { workspace = true }
 tracing = { workspace = true }
-ed25519-compact = "2.1.1"
-prost =  { version = "0.14.1", default-features = false }
-quinn = "0.11.8"
-rcgen = "0.13.2"
-rustls = "0.23.28"
+ed25519-compact = "2.2.0"
+prost =  { version = "0.14.3", default-features = false }
+quinn = "0.11.9"
+rcgen = "0.14.7"
+rustls = "0.23.40"
 zstd = "0.13.3"
-tokio = { version = "1.45.1", default-features = false }
-rand = "0.9.1"
+tokio = { version = "1.52.2", default-features = false }
+rand = "0.10.1"
 auto-net = "0.0.1"
 async-trait = { workspace = true }
 futures = { workspace = true }
 bytes = "1.10.1"
-serde = { version = "1.0.219", features = ["derive"], optional = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 
 [features]
 default = []
@@ -37,10 +37,10 @@ ser = ["serde"]
 # std = ["prost/std", "rand/std", "bytes/std"]
 
 [dev-dependencies]
-criterion = { version = "0.6", features = ["async_tokio"] }
+criterion = { version = "0.8.2", features = ["async_tokio"] }
 plotters = { version = "0.3.7", features = ["fontconfig-dlopen"] }
-tokio = { version = "1.45.1", features = ["full"] }
-tracing-subscriber = "0.3.19"
+tokio = { version = "1.52.2", features = ["full"] }
+tracing-subscriber = "0.3.23"
 
 [badges]
 maintenance = { status = "actively-developed" }

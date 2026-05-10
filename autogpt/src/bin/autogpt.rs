@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
         use autogpt::common::utils::fetch_latest_version;
         use autogpt::common::utils::is_outdated;
         use autogpt::common::utils::setup_logging;
+        #[cfg(feature = "gem")]
         use autogpt::prelude::CTrait;
         use autogpt::prelude::ClientType;
         #[cfg(feature = "gpt")]
@@ -68,13 +69,20 @@ async fn main() -> Result<()> {
         #[cfg(feature = "gpt")]
         use autogpt::traits::functions::Functions;
         use clap::Parser;
-        #[cfg(feature = "gpt")]
-        use colored::*;
+
+        #[allow(unused_imports)]
+        use colored::Colorize;
+        #[cfg(any(feature = "gem", feature = "oai", feature = "cld"))]
         use futures_util::StreamExt;
+        #[cfg(feature = "gem")]
         use gems::messages::Content;
+        #[cfg(feature = "gem")]
         use gems::messages::Message as GemMessage;
+        #[cfg(feature = "gem")]
         use gems::models::Model;
+        #[cfg(feature = "gem")]
         use gems::stream::StreamBuilder;
+        #[cfg(feature = "gem")]
         use gems::utils::extract_text_from_partial_json;
         #[cfg(feature = "net")]
         use iac_rs::message::Message;
@@ -83,9 +91,27 @@ async fn main() -> Result<()> {
         use std::env;
         #[cfg(feature = "gpt")]
         use std::env::var;
+        #[cfg(any(
+            feature = "gem",
+            feature = "oai",
+            feature = "cld",
+            feature = "xai",
+            feature = "co",
+            feature = "hf",
+            feature = "net"
+        ))]
         use std::io::Write;
         #[cfg(feature = "net")]
         use std::sync::Arc;
+        #[cfg(any(
+            feature = "gem",
+            feature = "oai",
+            feature = "cld",
+            feature = "xai",
+            feature = "co",
+            feature = "hf",
+            feature = "net"
+        ))]
         use std::thread;
         use termimad::MadSkin;
         #[cfg(feature = "net")]
@@ -94,12 +120,20 @@ async fn main() -> Result<()> {
         use tokio::signal;
         #[cfg(feature = "net")]
         use tokio::sync::Mutex;
+        #[cfg(any(
+            feature = "gem",
+            feature = "oai",
+            feature = "cld",
+            feature = "xai",
+            feature = "co",
+            feature = "hf",
+            feature = "net"
+        ))]
         use tokio::time::Duration;
         #[cfg(feature = "net")]
         use tokio::time::timeout;
-        use tracing::error;
-        #[cfg(any(feature = "gpt", feature = "net"))]
-        use tracing::{info, warn};
+        #[allow(unused_imports)]
+        use tracing::{error, info, warn};
 
         setup_logging()?;
 
@@ -120,9 +154,19 @@ async fn main() -> Result<()> {
             }
         }
 
+        #[allow(dead_code)]
+        #[cfg(any(
+            feature = "gem",
+            feature = "oai",
+            feature = "cld",
+            feature = "xai",
+            feature = "co",
+            feature = "hf",
+            feature = "net"
+        ))]
         pub fn type_with_cursor_effect(text: &str, delay: u64, skin: &MadSkin) {
             skin.print_inline(text);
-            std::io::stdout().flush().unwrap();
+            let _ = std::io::stdout().flush();
             thread::sleep(Duration::from_millis(delay));
         }
 
@@ -228,10 +272,11 @@ async fn main() -> Result<()> {
 
             Ok(())
         }
-        if let Some(prompt) = args.prompt {
+        if let Some(_prompt) = args.prompt {
+            #[allow(unused_variables)]
+            let prompt = _prompt;
             #[cfg(feature = "mop")]
             if args.mixture {
-                use colored::Colorize;
                 use tracing::info;
                 if let Some((provider, response)) = run_mixture(&prompt).await {
                     info!(
@@ -246,6 +291,7 @@ async fn main() -> Result<()> {
                 }
             }
 
+            #[allow(unused_variables)]
             let skin = MadSkin::default();
             let mut client = ClientType::from_env();
             match &mut client {
@@ -332,8 +378,7 @@ async fn main() -> Result<()> {
                 ClientType::Anthropic(client) => {
                     use anthropic_ai_sdk::types::message::MessageClient;
                     use anthropic_ai_sdk::types::message::{
-                        ContentBlockDelta, CreateMessageParams, Message, RequiredMessageParams,
-                        Role, StreamEvent,
+                        CreateMessageParams, Message, RequiredMessageParams, Role,
                     };
 
                     let body = CreateMessageParams::new(RequiredMessageParams {
@@ -347,8 +392,8 @@ async fn main() -> Result<()> {
                         Ok(mut stream) => {
                             while let Some(event_result) = stream.next().await {
                                 match event_result {
-                                    Ok(StreamEvent::ContentBlockDelta { delta, .. }) => {
-                                        if let ContentBlockDelta::TextDelta { text } = delta {
+                                    Ok(anthropic_ai_sdk::types::message::StreamEvent::ContentBlockDelta { delta, .. }) => {
+                                        if let anthropic_ai_sdk::types::message::ContentBlockDelta::TextDelta { text } = delta {
                                             type_with_cursor_effect(&text, 1, &skin);
                                         }
                                     }
@@ -448,7 +493,7 @@ async fn main() -> Result<()> {
                                     let lines: Vec<&str> = text.split('\n').collect();
                                     for (i, line) in lines.iter().enumerate() {
                                         if !line.is_empty() {
-                                            type_with_cursor_effect(line, 1, &skin);
+                                            type_with_cursor_effect(line, 10, &skin);
                                         }
                                         if i < lines.len() - 1 {
                                             println!();
@@ -463,14 +508,34 @@ async fn main() -> Result<()> {
                     }
                 }
 
+                #[cfg(feature = "hf")]
+                ClientType::HuggingFace(hf_client) => {
+                    let model_id = autogpt::common::utils::hf_model_from_str(&hf_client.model);
+                    match hf_client.client.inference().create(&prompt, model_id).await {
+                        Ok(result) => {
+                            use api_huggingface::components::inference_shared::InferenceResponse;
+                            let text = match result {
+                                InferenceResponse::Single(o) => o.generated_text,
+                                InferenceResponse::Batch(mut v) => {
+                                    v.pop().map(|o| o.generated_text).unwrap_or_default()
+                                }
+                                _ => String::new(),
+                            };
+                            for word in text.split_whitespace() {
+                                type_with_cursor_effect(&format!("{word} "), 20, &skin);
+                            }
+                        }
+                        Err(e) => error!("HuggingFace inference failed: {}", e),
+                    }
+                }
+
                 #[allow(unreachable_patterns)]
                 _ => {
                     return Err(anyhow!(
-                        "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                        "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                     ));
                 }
             }
-            println!();
         } else if args.command.is_none() && args.net {
             #[cfg(feature = "net")]
             {

@@ -85,7 +85,7 @@ pub fn handle_new(name: &str) -> Result<()> {
         gem_array.push("autogpt/gem");
         f_table.insert("gem", Item::Value(Value::Array(gem_array)));
 
-        for feat in ["net", "mem", "oai", "cld", "xai"] {
+        for feat in ["net", "mem", "oai", "cld", "xai", "co", "hf"] {
             f_table.insert(feat, Item::Value(Value::Array(Array::default())));
         }
 

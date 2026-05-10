@@ -1,0 +1,44 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --all-features
+
+      - name: Upload binaries to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $TAG = "${{ github.ref_name }}"
+          } else {
+            $TAG = gh release list --limit 1 --json tagName --jq '.[0].tagName'
+          }
+
+          if (-not $TAG -or $TAG -eq "null") {
+            Write-Host "No release tag found. Skipping upload."
+            exit 0
+          }
+
+          Write-Host "Uploading to release: $TAG"
+          gh release upload $TAG target/release/autogpt.exe target/release/orchgpt.exe --clobber

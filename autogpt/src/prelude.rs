@@ -7,20 +7,13 @@
 
 #![doc = include_str!("../INSTALLATION.md")]
 
-#[cfg(any(
-    feature = "co",
-    feature = "oai",
-    feature = "gem",
-    feature = "cld",
-    feature = "xai"
-))]
 use {futures::future::join_all, tokio::task, tracing::error};
 
-#[cfg(feature = "img")]
+#[cfg(all(feature = "gpt", feature = "img"))]
 pub use crate::agents::designer::DesignerGPT;
-#[cfg(feature = "git")]
+#[cfg(all(feature = "gpt", feature = "git"))]
 pub use crate::agents::git::GitGPT;
-#[cfg(feature = "mail")]
+#[cfg(all(feature = "gpt", feature = "mail"))]
 pub use crate::agents::mailer::MailerGPT;
 
 #[cfg(feature = "gpt")]
@@ -97,6 +90,12 @@ pub use x_ai;
 
 #[cfg(feature = "co")]
 pub use cohere_rust;
+
+#[cfg(feature = "hf")]
+pub use api_huggingface;
+
+#[cfg(feature = "hf")]
+pub use crate::common::utils::hf_model_from_str;
 
 #[allow(unreachable_code)]
 /// Represents an AutoGPT instance managing multiple agents and their execution settings.
@@ -184,13 +183,6 @@ impl AutoGPT {
         self
     }
 
-    #[cfg(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))]
     pub fn with<A>(mut self, agents: A) -> Self
     where
         A: Into<Vec<Arc<Mutex<Box<dyn AgentFunctions>>>>>,
@@ -199,13 +191,6 @@ impl AutoGPT {
         self
     }
 
-    #[cfg(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))]
     pub fn build(self) -> Result<Self> {
         Ok(Self {
             id: self.id,
@@ -219,13 +204,6 @@ impl AutoGPT {
         })
     }
 
-    #[cfg(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))]
     pub async fn run(&self) -> Result<String> {
         if self.agents.is_empty() {
             return Err(anyhow!("No agents to run."));

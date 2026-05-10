@@ -78,6 +78,10 @@ use crate::common::utils::{
     Capability, ClientType, ContextManager, Goal, Knowledge, Message, Persona, Planner, Reflection,
     Route, Scope, Status, Task, TaskScheduler, Tool, strip_code_blocks,
 };
+#[allow(unused_imports)]
+#[cfg(feature = "hf")]
+#[allow(unused_imports)]
+use crate::prelude::hf_model_from_str;
 use crate::prompts::optimizer::{MODULARIZE_PROMPT, SPLIT_PROMPT};
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Executor, Functions};
@@ -97,35 +101,17 @@ use {
     crate::common::memory::load_long_term_memory, crate::common::memory::long_term_memory_context,
     crate::common::memory::save_long_term_memory,
 };
-#[cfg(feature = "oai")]
-use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
-
-#[cfg(feature = "cld")]
-use anthropic_ai_sdk::types::message::{
-    ContentBlock, CreateMessageParams, Message as AnthMessage, MessageClient,
-    RequiredMessageParams, Role,
-};
-
-#[cfg(feature = "gem")]
-use gems::{
-    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
-    stream::StreamBuilder, traits::CTrait,
-};
 
 #[cfg(any(
     feature = "co",
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
-
-#[cfg(feature = "xai")]
-use x_ai::{
-    chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
-    traits::ChatCompletionsFetcher,
-};
 
 use async_trait::async_trait;
 

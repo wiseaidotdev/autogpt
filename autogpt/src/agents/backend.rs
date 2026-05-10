@@ -56,6 +56,10 @@ use crate::common::utils::{
     Persona, Planner, Reflection, Route, Scope, Status, Task, TaskScheduler, Tool, extract_array,
     strip_code_blocks,
 };
+#[allow(unused_imports)]
+#[cfg(feature = "hf")]
+#[allow(unused_imports)]
+use crate::prelude::hf_model_from_str;
 use crate::prompts::backend::{
     API_ENDPOINTS_PROMPT, FIX_CODE_PROMPT, IMPROVED_WEBSERVER_CODE_PROMPT, WEBSERVER_CODE_PROMPT,
 };
@@ -86,35 +90,16 @@ use {
     crate::common::memory::save_long_term_memory,
 };
 
-#[cfg(feature = "oai")]
-use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
-
-#[cfg(feature = "cld")]
-use anthropic_ai_sdk::types::message::{
-    ContentBlock, CreateMessageParams, Message as AnthMessage, MessageClient,
-    RequiredMessageParams, Role,
-};
-
-#[cfg(feature = "gem")]
-use gems::{
-    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
-    stream::StreamBuilder, traits::CTrait,
-};
-
 #[cfg(any(
     feature = "co",
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
-
-#[cfg(feature = "xai")]
-use x_ai::{
-    chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
-    traits::ChatCompletionsFetcher,
-};
 
 /// Struct representing a BackendGPT, which manages backend development tasks using GPT.
 #[derive(Debug, Clone, Default, Auto)]

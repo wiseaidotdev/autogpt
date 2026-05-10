@@ -3,6 +3,11 @@ use crate::common::utils::{
     Capability, ClientType, ContextManager, Knowledge, Persona, Planner, Reflection, Status, Task,
     TaskScheduler, Tool, is_yes, strip_code_blocks,
 };
+#[allow(unused_imports)]
+#[cfg(feature = "hf")]
+#[cfg(feature = "hf")]
+#[allow(unused_imports)]
+use crate::prelude::hf_model_from_str;
 #[cfg(feature = "cli")]
 use crate::prelude::*;
 use crate::traits::agent::Agent;
@@ -21,35 +26,16 @@ use {
     crate::common::memory::save_long_term_memory,
 };
 
-#[cfg(feature = "oai")]
-use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
-
-#[cfg(feature = "cld")]
-use anthropic_ai_sdk::types::message::{
-    ContentBlock, CreateMessageParams, Message as AnthMessage, MessageClient,
-    RequiredMessageParams, Role,
-};
-
-#[cfg(feature = "gem")]
-use gems::{
-    chat::ChatBuilder, imagen::ImageGenBuilder, messages::Content, models::Model,
-    stream::StreamBuilder, traits::CTrait,
-};
-
 #[cfg(any(
     feature = "co",
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
-
-#[cfg(feature = "xai")]
-use x_ai::{
-    chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
-    traits::ChatCompletionsFetcher,
-};
 
 #[cfg(feature = "cli")]
 use {
@@ -196,30 +182,7 @@ pub struct ReflectionResult {
 ///   4. Execute each task by prompting the LLM for `ActionRequest` JSON and running each action.
 ///   5. Reflect on every task's output; retry up to `max_tries` times before skipping.
 ///   6. Write a session walkthrough document on completion.
-#[cfg(all(
-    feature = "cli",
-    not(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))
-))]
-compile_error!(
-    "The 'cli' feature requires at least one LLM provider (gem, oai, cld, xai, or co). Please build with e.g., --features cli,gem"
-);
-
-#[cfg(all(
-    feature = "cli",
-    any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    )
-))]
+#[cfg(feature = "cli")]
 #[derive(Debug, Default, Clone, Auto)]
 pub struct GenericAgent {
     pub agent: AgentGPT,
@@ -241,16 +204,7 @@ use {
     async_trait::async_trait,
 };
 
-#[cfg(all(
-    feature = "cli",
-    any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    )
-))]
+#[cfg(feature = "cli")]
 #[async_trait]
 impl Executor for GenericAgent {
     /// Runs the full AutoGPT pipeline for a single user prompt.
@@ -592,7 +546,7 @@ impl GenericAgent {
                 .replace("{SKILLS_CONTEXT}", skills_context)
         );
 
-        let raw = self.generate(&full_prompt).await?;
+        let raw: String = self.generate(&full_prompt).await?;
 
         let numbered: Vec<SessionTask> = raw
             .lines()
@@ -991,8 +945,12 @@ impl GenericAgent {
                     Ok(entries) => {
                         let mut lines = Vec::new();
                         for entry in entries.flatten() {
+                            let entry: std::fs::DirEntry = entry;
                             let name = entry.file_name().to_string_lossy().to_string();
-                            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                            let is_dir = entry
+                                .file_type()
+                                .map(|t: std::fs::FileType| t.is_dir())
+                                .unwrap_or(false);
                             lines.push(if is_dir { format!("{name}/") } else { name });
                         }
                         lines.sort();
@@ -1502,7 +1460,7 @@ impl GenericAgent {
                 .replace("{SKILLS_CONTEXT}", skills_context)
         );
 
-        let raw = self.generate(&full_prompt).await?;
+        let raw: String = self.generate(&full_prompt).await?;
 
         let numbered: Vec<SessionTask> = raw
             .lines()
@@ -1598,20 +1556,11 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
 ///
 /// Slash commands (`/help`, `/sessions`, `/models`, `/clear`, `/status`, `/workspace`,
 /// `/provider`) are handled here and never reach the executor.
-#[cfg(all(
-    feature = "cli",
-    any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    )
-))]
+#[cfg(feature = "cli")]
 pub async fn run_generic_agent_loop(
     yolo: bool,
     session_id: Option<&str>,
-    mixture: bool,
+    _mixture: bool,
 ) -> anyhow::Result<()> {
     print_banner();
     print_greeting();
@@ -1706,10 +1655,11 @@ pub async fn run_generic_agent_loop(
         let stdin = io::stdin();
         let mut line = String::new();
         stdin.lock().read_line(&mut line)?;
+        #[allow(unused_mut)]
         let mut input = line.trim().to_string();
 
         #[cfg(feature = "mop")]
-        if mixture
+        if _mixture
             && !input.starts_with('/')
             && !is_yes(&input)
             && let Some((provider, response)) = run_mixture(&input).await
@@ -1925,7 +1875,7 @@ pub async fn run_generic_agent_loop(
                 .synthesize_followup_tasks(&input, prior, &skills_context, &snapshot)
                 .await
             {
-                Ok(t) if !t.is_empty() => t,
+                Ok(t) if !t.is_empty() => t as Vec<SessionTask>,
                 Ok(_) => {
                     print_error("LLM returned an empty follow-up task list.");
                     continue;
