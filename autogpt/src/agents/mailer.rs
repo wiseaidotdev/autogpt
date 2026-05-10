@@ -49,7 +49,9 @@ use gems::{
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
 
@@ -58,6 +60,9 @@ use x_ai::{
     chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
     traits::ChatCompletionsFetcher,
 };
+
+#[cfg(feature = "co")]
+use {cohere_rust::api::GenerateModel, cohere_rust::api::generate::GenerateRequest};
 
 use async_trait::async_trait;
 
@@ -235,7 +240,11 @@ impl MailerGPT {
                     }])
                     .build()?;
 
-                let result = gem_client.chat().generate(parameters).await;
+                let result: Result<String, anyhow::Error> = gem_client
+                    .chat()
+                    .generate(parameters)
+                    .await
+                    .map_err(|e| anyhow!(e.to_string()));
 
                 match result {
                     Ok(response) => response,
@@ -318,7 +327,7 @@ impl MailerGPT {
             #[cfg(feature = "cld")]
             ClientType::Anthropic(client) => {
                 let body = CreateMessageParams::new(RequiredMessageParams {
-                    model: "claude-3-7-sonnet-latest".to_string(),
+                    model: "claude-opus-4-6".to_string(),
                     messages: vec![AnthMessage::new_text(
                         Role::User,
                         format!("User Request:{prompt}\n\nEmails:{emails:?}"),
@@ -432,9 +441,6 @@ impl MailerGPT {
 
             #[cfg(feature = "co")]
             ClientType::Cohere(co_client) => {
-                use cohere_rust::api::GenerateModel;
-                use cohere_rust::api::generate::GenerateRequest;
-
                 let prompt_text = format!("User Request:{prompt}\n\nEmails:{emails:?}");
                 let gen_request = GenerateRequest {
                     prompt: &prompt_text,
@@ -460,10 +466,80 @@ impl MailerGPT {
                 }
             }
 
+            #[cfg(feature = "hf")]
+            ClientType::HuggingFace(hf_client) => {
+                let model_id = crate::common::utils::hf_model_from_str(&hf_client.model);
+                let text_prompt = format!("User Request:{prompt}\n\nEmails:{emails:?}");
+                let result = hf_client
+                    .client
+                    .inference()
+                    .create(&text_prompt, model_id)
+                    .await;
+
+                match result {
+                    Ok(inference_res) => {
+                        let response_text = match inference_res {
+                            api_huggingface::components::inference_shared::InferenceResponse::Single(output) => {
+                                output.generated_text
+                            }
+                            api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
+                                batch.pop().map(|o| o.generated_text).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(response_text.clone()),
+                        });
+
+                        #[cfg(feature = "mem")]
+                        {
+                            let _ = self
+                                .save_ltm(Message {
+                                    role: Cow::Borrowed("assistant"),
+                                    content: Cow::Owned(response_text.clone()),
+                                })
+                                .await;
+                        }
+
+                        #[cfg(debug_assertions)]
+                        debug!(
+                            "[*] {:?}: Got HF Output: {:?}",
+                            self.agent.persona(),
+                            response_text
+                        );
+
+                        response_text
+                    }
+
+                    Err(err) => {
+                        let err_msg = format!("Failed to generate content from emails: {err}");
+
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(err_msg.clone()),
+                        });
+
+                        #[cfg(feature = "mem")]
+                        {
+                            let _ = self
+                                .save_ltm(Message {
+                                    role: Cow::Borrowed("assistant"),
+                                    content: Cow::Owned(err_msg.clone()),
+                                })
+                                .await;
+                        }
+
+                        return Err(anyhow!(err_msg));
+                    }
+                }
+            }
+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(anyhow!(
-                    "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                    "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                 ));
             }
         };

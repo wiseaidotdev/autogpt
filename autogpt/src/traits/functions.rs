@@ -180,7 +180,6 @@ pub trait AsyncFunctions: Send + Sync {
     /// # Returns
     ///
     /// A result indicating success or failure.
-    #[allow(async_fn_in_trait)]
     async fn execute<'a>(
         &'a mut self,
         task: &'a mut Task,
@@ -198,7 +197,6 @@ pub trait AsyncFunctions: Send + Sync {
     /// # Returns
     ///
     /// A result indicating success or failure.
-    #[allow(async_fn_in_trait)]
     #[cfg(feature = "mem")]
     async fn save_ltm<'a>(&'a mut self, message: Message) -> Result<()>;
 
@@ -207,7 +205,6 @@ pub trait AsyncFunctions: Send + Sync {
     /// # Returns
     ///
     /// A result containing a vector of messages.
-    #[allow(async_fn_in_trait)]
     #[cfg(feature = "mem")]
     async fn get_ltm<'a>(&'a self) -> Result<Vec<Message>>;
 
@@ -216,44 +213,18 @@ pub trait AsyncFunctions: Send + Sync {
     /// # Returns
     ///
     /// A string containing the concatenated context of the agent's memory.
-    #[allow(async_fn_in_trait)]
     #[cfg(feature = "mem")]
     async fn ltm_context<'a>(&'a self) -> String;
 
-    #[allow(async_fn_in_trait)]
-    #[cfg(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))]
     async fn generate(&mut self, request: &str) -> Result<String>;
 
-    #[allow(async_fn_in_trait)]
-    #[cfg(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))]
     async fn imagen(&mut self, request: &str) -> Result<Vec<u8>>;
 
-    #[allow(async_fn_in_trait)]
-    #[cfg(any(
-        feature = "co",
-        feature = "oai",
-        feature = "gem",
-        feature = "cld",
-        feature = "xai"
-    ))]
     async fn stream(&mut self, request: &str) -> Result<ReqResponse>;
 }
 
 #[async_trait]
 pub trait Executor {
-    #[allow(async_fn_in_trait)]
     async fn execute<'a>(
         &'a mut self,
         task: &'a mut Task,

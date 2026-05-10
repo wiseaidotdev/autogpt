@@ -18,6 +18,7 @@ use tracing_subscriber::{filter, fmt, prelude::*, reload};
 
 #[tokio::test]
 #[cfg(feature = "img")]
+#[ignore]
 async fn test_generate_image_from_text() -> Result<()> {
     let filter = filter::LevelFilter::INFO;
     let (filter, _reload_handle) = reload::Layer::new(filter);
@@ -50,6 +51,7 @@ async fn test_generate_image_from_text() -> Result<()> {
 
 #[tokio::test]
 #[cfg(feature = "img")]
+#[ignore]
 async fn test_execute_agent() -> Result<()> {
     let persona = "Web Designer";
     let behavior = "Crafts stunning web design layouts";

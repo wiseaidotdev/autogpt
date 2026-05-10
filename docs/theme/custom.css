@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&family=JetBrains+Mono:wght@400;500&display=swap");
-
 :root {
   --brand-primary: #e05a00;
   --brand-accent: #ff7b2e;
@@ -17,7 +15,7 @@ body,
 .sidebar,
 .chapter li a {
   font-family:
-    "Inter",
+    "Outfit",
     system-ui,
     -apple-system,
     sans-serif !important;
@@ -103,7 +101,10 @@ pre,
   margin-top: 1.8rem;
 }
 
-.content p {
+.content p,
+.content ul,
+.content ol,
+.content li {
   line-height: 1.8;
   font-size: 0.975rem;
 }

@@ -12,17 +12,17 @@ This is the default mode and requires no subcommands or flags.
 
 Once inside the shell, the following commands are available:
 
-| Command         | Description                                                             |
-| --------------- | ----------------------------------------------------------------------- |
-| `<your prompt>` | Send a message to the active AI agent                                   |
-| `/help`         | Show all available shell commands                                       |
-| `/provider`     | Switch LLM provider at runtime (Gemini, OpenAI, Anthropic, XAI, Cohere) |
-| `/models`       | Browse and switch between models supported by the active provider       |
-| `/sessions`     | List and resume previous conversation sessions                          |
-| `/status`       | Show the current model, provider, and workspace directory               |
-| `/workspace`    | Print the current workspace path                                        |
-| `/clear`        | Clear the terminal screen                                               |
-| `exit` / `quit` | Save the session and exit                                               |
+| Command         | Description                                                                          |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `<your prompt>` | Send a message to the active AI agent                                                |
+| `/help`         | Show all available shell commands                                                    |
+| `/provider`     | Switch LLM provider at runtime (Gemini, OpenAI, Anthropic, XAI, Cohere, HuggingFace) |
+| `/models`       | Browse and switch between models supported by the active provider                    |
+| `/sessions`     | List and resume previous conversation sessions                                       |
+| `/status`       | Show the current model, provider, and workspace directory                            |
+| `/workspace`    | Print the current workspace path                                                     |
+| `/clear`        | Clear the terminal screen                                                            |
+| `exit` / `quit` | Save the session and exit                                                            |
 
 <div class="callout callout-info">
 <strong>ℹ️ Note</strong>
@@ -46,6 +46,7 @@ You can switch between LLM providers without restarting the shell:
   3. Anthropic
   4. XAI
   5. Cohere
+  6. HuggingFace
 Select provider: 2
 ✓ Switched to OpenAI
 ```

@@ -4,11 +4,11 @@ AutoGPT is configured entirely through environment variables, no config files re
 
 ## Core Variables
 
-| Variable               | Required | Default        | Description                                                           |
-| ---------------------- | -------- | -------------- | --------------------------------------------------------------------- |
-| `AI_PROVIDER`          | No       | `gemini`       | Active LLM provider: `gemini`, `openai`, `anthropic`, `xai`, `cohere` |
-| `AUTOGPT_WORKSPACE`    | No       | `.` (cwd)      | Workspace root where agents write generated files                     |
-| `ORCHESTRATOR_ADDRESS` | CLI only | `0.0.0.0:8443` | TCP address the orchestrator listens on                               |
+| Variable               | Required | Default        | Description                                                                          |
+| ---------------------- | -------- | -------------- | ------------------------------------------------------------------------------------ |
+| `AI_PROVIDER`          | No       | `gemini`       | Active LLM provider: `gemini`, `openai`, `anthropic`, `xai`, `cohere`, `huggingface` |
+| `AUTOGPT_WORKSPACE`    | No       | `.` (cwd)      | Workspace root where agents write generated files                                    |
+| `ORCHESTRATOR_ADDRESS` | CLI only | `0.0.0.0:8443` | TCP address the orchestrator listens on                                              |
 
 ## LLM Provider API Keys
 
@@ -41,6 +41,11 @@ export XAI_MODEL=grok-4   # optional override
 export AI_PROVIDER=cohere
 export COHERE_API_KEY=<your_cohere_api_key>
 export COHERE_MODEL=command-r-plus   # optional override
+
+# HuggingFace, requires feature: hf
+export AI_PROVIDER=huggingface
+export HF_API_KEY=<your_hf_api_key>
+export HF_MODEL=meta-llama/Llama-3.3-70B-Instruct   # optional override
 ```
 
 Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/api-keys). Keys for other providers are available on their respective developer portals.

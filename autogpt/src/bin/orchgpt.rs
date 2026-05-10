@@ -8,7 +8,7 @@
 /// The main entry point of `orchgpt`.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    #[cfg(all(feature = "cli", feature = "net"))]
+    #[cfg(all(feature = "cli", feature = "net", feature = "gpt"))]
     {
         use autogpt::cli::orchgpt::Cli;
         use autogpt::common::utils::setup_logging;

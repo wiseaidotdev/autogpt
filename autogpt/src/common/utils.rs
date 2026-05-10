@@ -82,6 +82,8 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::env::var;
+#[allow(unused_imports)]
+use std::sync::Arc;
 #[cfg(feature = "cli")]
 use {
     colored::Colorize,
@@ -130,7 +132,88 @@ pub use anthropic_ai_sdk::{
 };
 
 #[cfg(feature = "co")]
-use {cohere_rust::Cohere, std::ops, std::sync::Arc};
+use {cohere_rust::Cohere, std::ops};
+
+#[cfg(feature = "hf")]
+use api_huggingface::{
+    Client as HfApiClient, environment::HuggingFaceEnvironmentImpl, secret::Secret,
+};
+
+/// Maps a Hugging Face model ID string to a canonical model ID supported by
+/// the HF Router API (`router.huggingface.co/v1/chat/completions`).
+///
+/// # Arguments
+///
+/// * `model` - Model ID string or short alias.
+///
+/// # Returns
+///
+/// (`&'static str`): The canonical model ID accepted by the router, defaulting
+/// to `meta-llama/Llama-3.3-70B-Instruct` for unknown strings.
+#[cfg(feature = "hf")]
+pub fn hf_model_from_str(model: &str) -> &'static str {
+    use api_huggingface::components::models::Models;
+    match model {
+        "meta-llama/Llama-3.3-70B-Instruct" | "llama-3.3" | "llama" | "llama3" => {
+            Models::llama_3_3_70b_instruct()
+        }
+        "moonshotai/Kimi-K2-Instruct-0905" | "kimi" | "kimi-k2" => Models::kimi_k2_instruct(),
+        "mistralai/Mistral-7B-Instruct-v0.3" | "mistral" | "mistral-7b" => {
+            Models::mistral_7b_instruct()
+        }
+        "codellama/CodeLlama-7b-Instruct-hf" | "codellama" => Models::code_llama_7b_instruct(),
+        "gpt2" => Models::gpt2(),
+        s if s.contains('/') => Models::llama_3_3_70b_instruct(),
+        _ => Models::llama_3_3_70b_instruct(),
+    }
+}
+
+/// A thin wrapper around `api_huggingface::Client` that carries the selected model identifier.
+#[cfg(feature = "hf")]
+#[derive(Clone)]
+pub struct HuggingFaceClient {
+    /// The model ID string (e.g. `"meta-llama/Llama-3.3-70B-Instruct"`).
+    pub model: String,
+    /// Shared, stateless Hugging Face API client.
+    pub client: Arc<HfApiClient<HuggingFaceEnvironmentImpl>>,
+}
+
+#[cfg(feature = "hf")]
+impl std::fmt::Debug for HuggingFaceClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HuggingFaceClient(model={})", self.model)
+    }
+}
+
+#[cfg(feature = "hf")]
+impl HuggingFaceClient {
+    /// Constructs a `HuggingFaceClient` from an explicit API key and model ID string.
+    ///
+    /// # Arguments
+    ///
+    /// * `api_key` - A valid Hugging Face API token (`hf_...`).
+    /// * `model`   - Model ID in `org/model` format or a short alias recognised by `hf_model_from_str`.
+    ///
+    /// # Returns
+    ///
+    /// (`HuggingFaceClient`): A new client ready to call the HF Inference API.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying `api_huggingface` environment or client cannot be built.
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+        let api_key = api_key.into();
+        let model = model.into();
+        let secret = Secret::new(api_key);
+        let env = HuggingFaceEnvironmentImpl::build(secret, None)
+            .expect("Failed to build HuggingFace environment");
+        let client = HfApiClient::build(env).expect("Failed to build HuggingFace client");
+        Self {
+            model,
+            client: Arc::new(client),
+        }
+    }
+}
 
 #[cfg(feature = "co")]
 #[derive(Clone)]
@@ -162,17 +245,24 @@ pub enum ClientType {
     #[cfg(feature = "gem")]
     Gemini(GeminiClient),
 
-    /// Anthropic Gemini client.
+    /// Anthropic Claude client.
     #[cfg(feature = "cld")]
     Anthropic(AnthropicClient),
 
-    /// XAI Grok client.
+    /// xAI Grok client.
     #[cfg(feature = "xai")]
     Xai(XaiClient),
 
     /// Cohere client.
     #[cfg(feature = "co")]
     Cohere(CohereClient),
+
+    /// Hugging Face Inference API client.
+    #[cfg(feature = "hf")]
+    HuggingFace(HuggingFaceClient),
+
+    /// No client configured or features disabled.
+    None,
 }
 
 impl Default for ClientType {
@@ -182,8 +272,27 @@ impl Default for ClientType {
 }
 
 impl ClientType {
+    /// Constructs the appropriate client from environment variables.
+    ///
+    /// Reads `AI_PROVIDER` to select the backend, then reads the provider-specific
+    /// environment variables (`HF_API_KEY`, `HF_MODEL`, `GEMINI_API_KEY`, etc.).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `AI_PROVIDER` is set to a value that requires a feature flag that is
+    /// not compiled in, or if a required API key env var is missing.
     pub fn from_env() -> Self {
         let provider = var("AI_PROVIDER").unwrap_or_else(|_| "gemini".to_string());
+        #[allow(unused)]
+        let _p = &provider;
+
+        #[cfg(feature = "hf")]
+        if provider == "huggingface" {
+            let api_key = var("HF_API_KEY").expect("Missing HF_API_KEY");
+            let model =
+                var("HF_MODEL").unwrap_or_else(|_| "meta-llama/Llama-3.3-70B-Instruct".to_string());
+            return ClientType::HuggingFace(HuggingFaceClient::new(api_key, model));
+        }
 
         #[cfg(feature = "co")]
         if provider == "cohere" {
@@ -220,17 +329,13 @@ impl ClientType {
             let client = XaiClient::builder()
                 .build()
                 .expect("Failed to build XaiClient");
-
             client.set_api_key(api_key);
             return ClientType::Xai(client);
         }
 
         #[allow(unreachable_code)]
         {
-            panic!(
-                "Invalid AI_PROVIDER `{provider}` or missing required feature flags. \
-                Make sure to enable at least one of: `co`, `gem`, `oai`, `cld`, `xai`."
-            );
+            ClientType::None
         }
     }
 }
@@ -668,13 +773,17 @@ pub enum Model {
     #[cfg(feature = "gem")]
     Gemini(GeminiModel),
 
-    /// Anthropic claude model.
+    /// Anthropic Claude model.
     #[cfg(feature = "cld")]
     Claude(String),
 
-    /// XAI grok model.
+    /// xAI Grok model.
     #[cfg(feature = "xai")]
     Xai(String),
+
+    /// Hugging Face model identifier in `org/model` format.
+    #[cfg(feature = "hf")]
+    HuggingFace(String),
 }
 
 impl Default for Model {
@@ -686,12 +795,12 @@ impl Default for Model {
 
         #[cfg(all(not(feature = "gem"), feature = "co"))]
         {
-            return Model::Cohere("command-a-03-2025".to_string());
+            Model::Cohere("command-a-03-2025".to_string())
         }
 
         #[cfg(all(not(any(feature = "gem", feature = "co")), feature = "oai"))]
         {
-            return Model::OpenAI("gpt-5".to_string());
+            Model::OpenAI("gpt-5".to_string())
         }
 
         #[cfg(all(
@@ -699,7 +808,7 @@ impl Default for Model {
             feature = "cld"
         ))]
         {
-            return Model::Claude("claude-opus-4-6".to_string());
+            Model::Claude("claude-opus-4-6".to_string())
         }
 
         #[cfg(all(
@@ -707,7 +816,21 @@ impl Default for Model {
             feature = "xai"
         ))]
         {
-            return Model::Xai("grok-4".to_string());
+            Model::Xai("grok-4".to_string())
+        }
+
+        #[cfg(all(
+            not(any(
+                feature = "gem",
+                feature = "co",
+                feature = "oai",
+                feature = "cld",
+                feature = "xai"
+            )),
+            feature = "hf"
+        ))]
+        {
+            Model::HuggingFace("mistralai/Mistral-7B-Instruct-v0.3".to_string())
         }
 
         #[cfg(not(any(
@@ -715,11 +838,12 @@ impl Default for Model {
             feature = "oai",
             feature = "gem",
             feature = "cld",
-            feature = "xai"
+            feature = "xai",
+            feature = "hf"
         )))]
         {
             panic!(
-                "At least one of the features `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for Model::default()"
+                "At least one of the features `hf`, `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for Model::default()"
             );
         }
     }
@@ -735,17 +859,21 @@ pub enum ProviderMessage {
     #[cfg(feature = "oai")]
     OpenAI(ChatMessage),
 
-    /// Google message type.
+    /// Google Gemini message type.
     #[cfg(feature = "gem")]
     Gemini(GeminiMessage),
 
-    /// Anthropic claude message type.
+    /// Anthropic Claude message type.
     #[cfg(feature = "cld")]
     Claude(AnthMessage),
 
-    /// Xai grok message type.
+    /// xAI Grok message type.
     #[cfg(feature = "xai")]
     Xai(XaiMessage),
+
+    /// Hugging Face plain-text prompt.
+    #[cfg(feature = "hf")]
+    HuggingFace(String),
 }
 
 impl Default for ProviderMessage {
@@ -757,15 +885,15 @@ impl Default for ProviderMessage {
 
         #[cfg(all(not(feature = "co"), feature = "oai"))]
         {
-            return ProviderMessage::OpenAI(ChatMessage::User {
+            ProviderMessage::OpenAI(ChatMessage::User {
                 content: ChatMessageContent::Text("Hello".into()),
                 name: None,
-            });
+            })
         }
 
         #[cfg(all(not(any(feature = "co", feature = "oai")), feature = "cld"))]
         {
-            return ProviderMessage::Claude(AnthMessage::new_text(Role::User, "Hello"));
+            ProviderMessage::Claude(AnthMessage::new_text(Role::User, "Hello"))
         }
 
         #[cfg(all(
@@ -784,7 +912,21 @@ impl Default for ProviderMessage {
             feature = "xai"
         ))]
         {
-            return ProviderMessage::Xai(XaiMessage::text("user", "Hello"));
+            ProviderMessage::Xai(XaiMessage::text("user", "Hello"))
+        }
+
+        #[cfg(all(
+            not(any(
+                feature = "co",
+                feature = "oai",
+                feature = "cld",
+                feature = "gem",
+                feature = "xai"
+            )),
+            feature = "hf"
+        ))]
+        {
+            ProviderMessage::HuggingFace("Hello".to_string())
         }
 
         #[cfg(not(any(
@@ -792,17 +934,19 @@ impl Default for ProviderMessage {
             feature = "oai",
             feature = "gem",
             feature = "cld",
-            feature = "xai"
+            feature = "xai",
+            feature = "hf"
         )))]
         {
             panic!(
-                "At least one of the features `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for ProviderMessage::default()"
+                "At least one of the features `hf`, `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for ProviderMessage::default()"
             );
         }
     }
 }
 
 impl ProviderMessage {
+    /// Constructs a `ProviderMessage` from a plain-text string using the first enabled provider.
     pub fn from_text(_text: impl Into<String>) -> Self {
         #[cfg(feature = "co")]
         {
@@ -811,15 +955,15 @@ impl ProviderMessage {
 
         #[cfg(all(not(feature = "co"), feature = "oai"))]
         {
-            return ProviderMessage::OpenAI(ChatMessage::User {
+            ProviderMessage::OpenAI(ChatMessage::User {
                 content: ChatMessageContent::Text(_text.into()),
                 name: None,
-            });
+            })
         }
 
         #[cfg(all(not(any(feature = "co", feature = "oai")), feature = "cld"))]
         {
-            return ProviderMessage::Claude(AnthMessage::new_text(Role::User, _text.into()));
+            ProviderMessage::Claude(AnthMessage::new_text(Role::User, _text.into()))
         }
 
         #[cfg(all(
@@ -838,10 +982,27 @@ impl ProviderMessage {
             feature = "xai"
         ))]
         {
-            return ProviderMessage::Xai(XaiMessage {
+            ProviderMessage::Xai(XaiMessage {
                 role: "user".to_string(),
-                content: _text.into(),
-            });
+                content: x_ai::chat_compl::MessageContent::Text(_text.into()),
+                reasoning_content: None,
+                refusal: None,
+                tool_calls: None,
+            })
+        }
+
+        #[cfg(all(
+            not(any(
+                feature = "co",
+                feature = "oai",
+                feature = "cld",
+                feature = "gem",
+                feature = "xai"
+            )),
+            feature = "hf"
+        ))]
+        {
+            ProviderMessage::HuggingFace(_text.into())
         }
 
         #[cfg(not(any(
@@ -849,11 +1010,12 @@ impl ProviderMessage {
             feature = "oai",
             feature = "gem",
             feature = "cld",
-            feature = "xai"
+            feature = "xai",
+            feature = "hf"
         )))]
         {
             panic!(
-                "At least one of the features `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for ProviderMessage::from_text()"
+                "At least one of the features `hf`, `co`, `oai`, `gem`, `cld`, or `xai` must be enabled for ProviderMessage::from_text()"
             );
         }
     }

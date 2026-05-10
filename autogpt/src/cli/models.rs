@@ -85,20 +85,21 @@ pub fn default_model(provider: &str) -> String {
             "anthropic" => "claude-opus-4-6".to_string(),
             "xai" => "grok-4".to_string(),
             "cohere" => "command-a-03-2025".to_string(),
+            "huggingface" => "meta-llama/Llama-3.1-8B-Instruct".to_string(),
             _ => "gemini-3.0-flash".to_string(),
         })
 }
 
 /// Returns the active provider from `AI_PROVIDER`, defaulting to `"gemini"`.
 ///
-/// Accepted values: `gemini`, `openai`, `anthropic`, `xai`, `cohere`.
+/// Accepted values: `gemini`, `openai`, `anthropic`, `xai`, `cohere`, `huggingface`.
 #[cfg(feature = "cli")]
 pub fn default_provider() -> String {
     if let Ok(p) = env::var("AI_PROVIDER") {
         let p = p.trim().to_lowercase();
         if matches!(
             p.as_str(),
-            "gemini" | "openai" | "anthropic" | "xai" | "cohere"
+            "gemini" | "openai" | "anthropic" | "xai" | "cohere" | "huggingface"
         ) {
             return p;
         }
@@ -113,7 +114,14 @@ pub fn model_index(models: &[ProviderModel], model_id: &str) -> usize {
 }
 
 /// Converts an enum variant to a `ProviderModel`.
-#[cfg(feature = "cli")]
+#[cfg(any(
+    feature = "gem",
+    feature = "oai",
+    feature = "cld",
+    feature = "xai",
+    feature = "co",
+    feature = "hf"
+))]
 fn make_model(id: String, display_name: String) -> ProviderModel {
     ProviderModel {
         id,
@@ -140,6 +148,9 @@ fn crate_models(provider: &str) -> Vec<ProviderModel> {
 
         #[cfg(feature = "co")]
         "cohere" => cohere_models(),
+
+        #[cfg(feature = "hf")]
+        "huggingface" => huggingface_models(),
 
         _ => vec![],
     }
@@ -234,9 +245,10 @@ fn xai_models() -> Vec<ProviderModel> {
 }
 
 #[cfg(all(feature = "cli", feature = "co"))]
-fn cohere_models() -> Vec<ProviderModel> {
-    use cohere_rust::api::GenerateModel;
+use cohere_rust::api::GenerateModel;
 
+#[cfg(all(feature = "cli", feature = "co"))]
+fn cohere_models() -> Vec<ProviderModel> {
     let variants = [
         GenerateModel::CommandRPlus,
         GenerateModel::CommandR,
@@ -256,6 +268,36 @@ fn cohere_models() -> Vec<ProviderModel> {
                 .map(|id| make_model(id, format!("{m:?}")))
         })
         .collect()
+}
+
+/// Returns the available Hugging Face Router API models (chat completions compatible).
+///
+/// All listed models are served via `router.huggingface.co/v1/chat/completions`.
+#[cfg(all(feature = "cli", feature = "hf"))]
+fn huggingface_models() -> Vec<ProviderModel> {
+    use api_huggingface::components::models::Models;
+    vec![
+        make_model(
+            Models::llama_3_3_70b_instruct().into(),
+            "Llama 3.3 70B Instruct (recommended)".into(),
+        ),
+        make_model(
+            Models::kimi_k2_instruct().into(),
+            "Kimi K2 Instruct (Moonshot AI)".into(),
+        ),
+        make_model(
+            Models::mistral_7b_instruct().into(),
+            "Mistral 7B Instruct v0.3".into(),
+        ),
+        make_model(
+            Models::code_llama_7b_instruct().into(),
+            "CodeLlama 7B Instruct".into(),
+        ),
+        make_model(
+            Models::gpt2().into(),
+            "GPT-2 (public, no key required)".into(),
+        ),
+    ]
 }
 
 /// Fetches the live model list from Anthropic asynchronously.

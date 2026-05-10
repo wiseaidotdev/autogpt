@@ -16,8 +16,7 @@ use prost::encoding::{
     string::{encode as encode_string, encoded_len as len_string, merge as merge_string},
     uint64::{encode as encode_u64, encoded_len as len_u64, merge as merge_uint64},
 };
-use rand::TryRngCore;
-use rand::rngs::OsRng;
+
 #[cfg(feature = "ser")]
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -332,9 +331,7 @@ fn curr_time() -> u64 {
 }
 
 fn gen_msg_id() -> u64 {
-    OsRng
-        .try_next_u64()
-        .expect("Secure RNG failed to initialize")
+    rand::random::<u64>()
 }
 
 // Copyright 2026 Mahmoud Harmouch.

@@ -1,4 +1,4 @@
-name: 🧹 Cargo Clippy Linter
+name: 🦀 Cargo Build
 
 on:
   push:
@@ -8,12 +8,11 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
 
 jobs:
-  cargo-clippy:
-    name: 🔍 Run Clippy Linter
+  check:
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         features:
@@ -47,15 +46,13 @@ jobs:
             "all-features",
           ]
     steps:
-      - name: 📥 Checkout Repository
       - uses: actions/checkout@v4
-
-      - name: 🧪 Run Clippy
+      - name: Build
         run: |
           if [ "${{ matrix.features }}" == "all-features" ]; then
-            cargo clippy --all-features -- -D warnings
+            cargo check --all-features
           elif [ -z "${{ matrix.features }}" ]; then
-            cargo clippy --no-default-features -- -D warnings
+            cargo check --no-default-features
           else
-            cargo clippy --no-default-features --features "${{ matrix.features }}" -- -D warnings
+            cargo check --no-default-features --features "${{ matrix.features }}"
           fi

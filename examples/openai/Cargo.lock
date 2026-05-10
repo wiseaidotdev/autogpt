@@ -61,7 +61,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autogpt"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -73,7 +73,7 @@ dependencies = [
  "duckduckgo",
  "futures",
  "openai_dive",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
@@ -1324,7 +1324,7 @@ dependencies = [
  "bytes",
  "derive_builder",
  "futures",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "reqwest-eventsource",
  "serde",
  "serde_html_form",
@@ -1604,7 +1604,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1642,7 +1642,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -1737,9 +1737,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"
-version = "0.12.22"
+version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
+checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
@@ -1834,7 +1834,7 @@ dependencies = [
  "mime",
  "nom",
  "pin-project-lite",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "thiserror 1.0.69",
 ]
 
@@ -1934,7 +1934,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

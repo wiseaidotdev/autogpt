@@ -37,7 +37,10 @@ use {
     crate::common::memory::save_long_term_memory,
 };
 #[cfg(feature = "oai")]
-use {openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*};
+use {
+    openai_dive::v1::models::Gpt4Model, openai_dive::v1::resources::chat::*,
+    openai_dive::v1::resources::model::*,
+};
 
 #[cfg(feature = "cld")]
 use anthropic_ai_sdk::types::message::{
@@ -60,7 +63,9 @@ use gems::{
     feature = "oai",
     feature = "gem",
     feature = "cld",
-    feature = "xai"
+    feature = "xai",
+    feature = "hf",
+    feature = "gpt"
 ))]
 use crate::traits::functions::ReqResponse;
 
@@ -69,6 +74,9 @@ use x_ai::{
     chat_compl::{ChatCompletionsRequestBuilder, Message as XaiMessage},
     traits::ChatCompletionsFetcher,
 };
+
+#[cfg(feature = "co")]
+use {cohere_rust::api::GenerateModel, cohere_rust::api::generate::GenerateRequest};
 
 /// Struct representing a ManagerGPT, responsible for managing different types of GPT agents.
 #[derive(Debug)]
@@ -220,10 +228,14 @@ impl ManagerGPT {
                         name: None,
                     }])
                     .build()?;
-                let result = gem_client.chat().generate(parameters).await;
+                let result: Result<String, anyhow::Error> = gem_client
+                    .chat()
+                    .generate(parameters)
+                    .await
+                    .map_err(|e| anyhow!(e.to_string()));
 
                 match result {
-                    Ok(response) => strip_code_blocks(&response),
+                    Ok(res) => strip_code_blocks(&res),
                     Err(_err) => {
                         let error_msg = "Failed to generate content via Gemini API.".to_string();
                         self.agent.add_message(Message {
@@ -248,9 +260,6 @@ impl ManagerGPT {
 
             #[cfg(feature = "oai")]
             ClientType::OpenAI(oai_client) if provider == "openai" => {
-                use openai_dive::v1::resources::chat::*;
-                use openai_dive::v1::resources::model::*;
-
                 let parameters = ChatCompletionParametersBuilder::default()
                     .model(Gpt4Model::Gpt4O.to_string())
                     .messages(vec![ChatMessage::User {
@@ -306,7 +315,7 @@ impl ManagerGPT {
             #[cfg(feature = "cld")]
             ClientType::Anthropic(client) if provider == "claude" => {
                 let body = CreateMessageParams::new(RequiredMessageParams {
-                    model: "claude-3-7-sonnet-latest".to_string(),
+                    model: "claude-opus-4-6".to_string(),
                     messages: vec![AnthMessage::new_text(Role::User, prompt.clone())],
                     max_tokens: 1024,
                 });
@@ -417,9 +426,6 @@ impl ManagerGPT {
 
             #[cfg(feature = "co")]
             ClientType::Cohere(co_client) => {
-                use cohere_rust::api::GenerateModel;
-                use cohere_rust::api::generate::GenerateRequest;
-
                 let gen_request = GenerateRequest {
                     prompt: &prompt,
                     model: Some(GenerateModel::Custom("command-a-03-2025".to_string())),
@@ -444,10 +450,76 @@ impl ManagerGPT {
                 }
             }
 
+            #[cfg(feature = "hf")]
+            ClientType::HuggingFace(hf_client) => {
+                let model_id = crate::common::utils::hf_model_from_str(&hf_client.model);
+                let result = hf_client.client.inference().create(&prompt, model_id).await;
+
+                match result {
+                    Ok(inference_res) => {
+                        let response_text = match inference_res {
+                            api_huggingface::components::inference_shared::InferenceResponse::Single(output) => {
+                                output.generated_text
+                            }
+                            api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
+                                batch.pop().map(|o| o.generated_text).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(response_text.clone()),
+                        });
+
+                        #[cfg(feature = "mem")]
+                        {
+                            let _ = self
+                                .save_ltm(Message {
+                                    role: Cow::Borrowed("assistant"),
+                                    content: Cow::Owned(response_text.clone()),
+                                })
+                                .await;
+                        }
+
+                        #[cfg(debug_assertions)]
+                        debug!(
+                            "[*] {:?}: Got HF Output: {:?}",
+                            self.agent.persona(),
+                            response_text
+                        );
+
+                        strip_code_blocks(&response_text)
+                    }
+
+                    Err(err) => {
+                        let err_msg =
+                            format!("Failed to generate content via HuggingFace API: {err}");
+
+                        self.agent.add_message(Message {
+                            role: Cow::Borrowed("assistant"),
+                            content: Cow::Owned(err_msg.clone()),
+                        });
+
+                        #[cfg(feature = "mem")]
+                        {
+                            let _ = self
+                                .save_ltm(Message {
+                                    role: Cow::Borrowed("assistant"),
+                                    content: Cow::Owned(err_msg.clone()),
+                                })
+                                .await;
+                        }
+
+                        return Err(anyhow!(err_msg));
+                    }
+                }
+            }
+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(anyhow!(
-                    "No valid AI client configured. Enable `co`, `gem`, `oai`, `cld`, or `xai` feature."
+                    "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                 ));
             }
         };

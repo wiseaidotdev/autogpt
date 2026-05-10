@@ -32,10 +32,10 @@ pub fn init_server() -> Result<ServerConfig> {
         "0.0.0.0".to_string(),
         "127.0.0.1".to_string(),
     ];
-    let CertifiedKey { cert, key_pair } = generate_simple_self_signed(subject_alt_names)?;
+    let CertifiedKey { cert, signing_key } = generate_simple_self_signed(subject_alt_names)?;
 
     let cert_der = cert.der();
-    let key_der = key_pair.serialize_der();
+    let key_der = signing_key.serialize_der();
     let private_key = PrivateKeyDer::try_from(key_der)
         .map_err(|e| anyhow!("failed to parse private key: {e}"))?;
 
