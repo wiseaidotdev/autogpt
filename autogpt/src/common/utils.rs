@@ -308,7 +308,7 @@ impl ClientType {
 
         #[cfg(feature = "gem")]
         if provider == "gemini" {
-            let model = var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
+            let model = var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.0-flash".to_string());
             let api_key = var("GEMINI_API_KEY").unwrap_or_default();
             let gemini_client = GeminiClient::builder().model(&model).build().unwrap();
             gemini_client.set_api_key(api_key);

@@ -146,6 +146,10 @@ pub enum Commands {
         /// Name of the agent project (used as directory name)
         #[arg()]
         name: String,
+
+        /// AI provider feature to activate (e.g. gem, oai, cld, hf, etc.)
+        #[arg(short, long, value_name = "FEATURE")]
+        feature: Option<String>,
     },
 
     /// Build the Rust code generated from agent.yaml

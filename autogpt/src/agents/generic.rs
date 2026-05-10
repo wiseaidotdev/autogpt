@@ -5,8 +5,6 @@ use crate::common::utils::{
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
-#[cfg(feature = "hf")]
-#[allow(unused_imports)]
 use crate::prelude::hf_model_from_str;
 #[cfg(feature = "cli")]
 use crate::prelude::*;

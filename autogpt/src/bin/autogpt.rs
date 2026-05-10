@@ -594,7 +594,10 @@ async fn main() -> Result<()> {
                 Commands::Test
                     | Commands::Run { feature: _ }
                     | Commands::Build { out: _ }
-                    | Commands::New { name: _ }
+                    | Commands::New {
+                        name: _,
+                        feature: _
+                    }
             ) {
                 _git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
                 let behavior =
@@ -1224,7 +1227,7 @@ async fn main() -> Result<()> {
                         "Agentic commands require the 'gpt' feature. Recompile with --features gpt."
                     );
                 }
-                Commands::New { name } => new::handle_new(&name)?,
+                Commands::New { name, feature } => new::handle_new(&name, feature)?,
                 Commands::Build { out } => build::handle_build(out)?,
                 Commands::Run { feature } => run::handle_run(feature.unwrap_or_default())?,
                 Commands::Test => test::handle_test()?,

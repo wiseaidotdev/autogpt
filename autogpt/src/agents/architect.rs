@@ -54,7 +54,6 @@ use crate::common::utils::{
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
-#[allow(unused_imports)]
 use crate::prelude::hf_model_from_str;
 use crate::prompts::architect::{
     ARCHITECT_DIAGRAM_PROMPT, ARCHITECT_ENDPOINTS_PROMPT, ARCHITECT_SCOPE_PROMPT,

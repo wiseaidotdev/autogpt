@@ -191,7 +191,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 use cohere_rust::api::chat::ChatRequest;
 
                 #[cfg(feature = "hf")]
-                use serde_json::{Value as JsonValue, json};
+                use ::autogpt::prelude::serde_json::{Value as JsonValue, json};
 
                 match &mut self.client {
                     #[cfg(feature = "gem")]
@@ -284,7 +284,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                         let mut receiver = match co_client.chat(&chat_request).await {
                             Ok(rx) => rx,
-                            Err(e) => return Err(anyhow::anyhow!("Cohere API initialization failed: {}", e)),
+                            Err(e) => return Err(::autogpt::prelude::anyhow!("Cohere API initialization failed: {}", e)),
                         };
                         let mut full_text = String::new();
                         while let Some(res) = receiver.recv().await {
@@ -293,7 +293,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                     full_text.push_str(&text);
                                 }
                                 Ok(_) => {}
-                                // Err(e) => return Err(anyhow!("Cohere chat error: {:?}", e)),
+                                // Err(e) => return Err(::autogpt::prelude::anyhow!("Cohere chat error: {:?}", e)),
                                 Err(_) => {},
                             }
                         }
@@ -308,7 +308,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             .inference()
                             .create(request, model_id)
                             .await
-                            .map_err(|e| anyhow::anyhow!("HuggingFace inference failed: {}", e))?;
+                            .map_err(|e| ::autogpt::prelude::anyhow!("HuggingFace inference failed: {}", e))?;
                         let text = match result {
                             api_huggingface::components::inference_shared::InferenceResponse::Single(output) => output.generated_text,
                             api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
@@ -321,7 +321,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[allow(unreachable_patterns)]
                     _ => {
-                        return Err(anyhow!(
+                        return Err(::autogpt::prelude::anyhow!(
                             "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
@@ -333,7 +333,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 use gems::{imagen::ImageGenBuilder, messages::Content, models::Model, traits::CTrait};
 
                 #[cfg(feature = "hf")]
-                use serde_json::json;
+                use ::autogpt::prelude::serde_json::json;
 
                 match &mut self.client {
                     #[cfg(feature = "gem")]
@@ -386,7 +386,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             .inference()
                             .create(request, model_id)
                             .await
-                            .map_err(|e| anyhow::anyhow!("HuggingFace imagen failed: {}", e))?;
+                            .map_err(|e| ::autogpt::prelude::anyhow!("HuggingFace imagen failed: {}", e))?;
                         let text = match result {
                             api_huggingface::components::inference_shared::InferenceResponse::Single(output) => output.generated_text,
                             api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
@@ -399,7 +399,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     #[allow(unreachable_patterns)]
                     _ => {
-                        return Err(anyhow!(
+                        return Err(::autogpt::prelude::anyhow!(
                             "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));
                     }
@@ -436,7 +436,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                 #[cfg(feature = "hf")]
                 use {
-                    serde_json::{Value as JsonValue, json},
+                    ::autogpt::prelude::serde_json::{Value as JsonValue, json},
                 };
 
                 let request_owned = request.to_string();
@@ -479,7 +479,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                                     continue;
                                                 }
                                                 if let Ok(json) =
-                                                    serde_json::from_str::<serde_json::Value>(data)
+                                                    ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data)
                                                 {
                                                     if let Some(text) = json
                                                         .get("candidates")
@@ -614,7 +614,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             "chat/completions",
                         )
                         .map_err(|e| {
-                            anyhow::anyhow!("Failed to build xAI request: {}", e)
+                            ::autogpt::prelude::anyhow!("Failed to build xAI request: {}", e)
                         })?
                         .json(&req)
                         .send()
@@ -647,7 +647,7 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                                     continue;
                                                 }
                                                 if let Ok(json) =
-                                                    serde_json::from_str::<serde_json::Value>(data)
+                                                    ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data)
                                                 {
                                                     if let Some(content) = json
                                                         .get("choices")
@@ -738,12 +738,9 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         Ok(ReqResponse(Some(rx)))
                     }
 
-
-
-
                     #[allow(unreachable_patterns)]
                     _ => {
-                        return Err(anyhow!(
+                        return Err(::autogpt::prelude::anyhow!(
                             "No valid AI client configured. \
                              Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
                         ));

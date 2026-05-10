@@ -80,12 +80,11 @@ use crate::common::utils::{
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
-#[allow(unused_imports)]
 use crate::prelude::hf_model_from_str;
 use crate::prompts::optimizer::{MODULARIZE_PROMPT, SPLIT_PROMPT};
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Executor, Functions};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use auto_derive::Auto;
 use colored::*;
 use std::borrow::Cow;

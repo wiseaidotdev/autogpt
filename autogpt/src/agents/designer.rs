@@ -52,7 +52,6 @@ use crate::common::utils::{
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
-#[allow(unused_imports)]
 use crate::prelude::hf_model_from_str;
 #[allow(unused)]
 use crate::prompts::designer::{IMGGET_PROMPT, WEB_DESIGNER_PROMPT};
