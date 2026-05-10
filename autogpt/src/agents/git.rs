@@ -5,7 +5,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use colored::*;
 use git2::{IndexAddOption, Repository, Signature};
 use std::borrow::Cow;
@@ -22,7 +22,6 @@ use crate::common::utils::{
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
-#[allow(unused_imports)]
 use crate::prelude::hf_model_from_str;
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Executor, Functions};

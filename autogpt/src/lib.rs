@@ -12,6 +12,18 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
+extern crate self as autogpt;
+
+#[doc(hidden)]
+pub use anyhow;
+#[cfg(feature = "hf")]
+#[doc(hidden)]
+pub use api_huggingface;
+#[doc(hidden)]
+pub use futures;
+#[doc(hidden)]
+pub use serde_json;
+
 pub mod agents;
 pub mod common;
 pub mod macros;

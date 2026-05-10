@@ -21,8 +21,10 @@ pub fn handle_run(mut feature: String) -> Result<()> {
             "openai" => "oai".to_string(),
             "anthropic" => "cld".to_string(),
             "xai" => "xai".to_string(),
+            "cohere" => "co".to_string(),
+            "huggingface" => "hf".to_string(),
             _ => bail!(
-                "❌ Unknown or missing AI_PROVIDER environment variable.\nPlease set AI_PROVIDER to one of: gemini, openai, anthropic, xai."
+                "❌ Unknown or missing AI_PROVIDER environment variable.\nPlease set AI_PROVIDER to one of: gemini, openai, anthropic, xai, cohere, huggingface."
             ),
         };
     }

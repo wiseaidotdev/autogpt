@@ -17,16 +17,11 @@ pub fn generate_code(config: &AgentConfig, out: &Path) -> Result<()> {
         r#"#![allow(unused)]
 
 use autogpt::prelude::*;
-use std::borrow::Cow;
 
 #[derive(Debug, Default, Auto)]
 pub struct {name} {{
-    behavior: Cow<'static, str>,
-    persona: Cow<'static, str>,
-    status: Status,
     agent: AgentGPT,
     client: ClientType,
-    memory: Vec<Message>,
 }}
 
 #[async_trait]

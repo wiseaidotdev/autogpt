@@ -37,6 +37,7 @@ pub use {
     anyhow::{Result, anyhow},
     async_trait::async_trait,
     auto_derive::Auto,
+    serde_json,
     std::collections::HashSet,
     std::{borrow::Cow, sync::Arc},
     tokio::sync::Mutex,

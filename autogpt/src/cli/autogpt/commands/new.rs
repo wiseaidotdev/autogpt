@@ -15,21 +15,35 @@ use std::path::{Path, PathBuf};
 use std::{fs, process::Command};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
-const DEFAULT_YAML: &str = r#"
-name: agent_name
-ai_provider: gemini
-model: gemini-2.0-flash
-persona: Backend Engineer
-role: user
-prompt: |
-  Describe a scalable microservice architecture.
-"#;
-
-pub fn handle_new(name: &str) -> Result<()> {
+pub fn handle_new(name: &str, feature: Option<String>) -> Result<()> {
     let path = Path::new(name);
     if path.exists() {
         bail!("❌ Directory '{}' already exists", name);
     }
+
+    let (provider, model, feat_flag) = match feature.as_deref() {
+        Some("hf") => ("huggingface", "meta-llama/Llama-3.3-70B-Instruct", "hf"),
+        Some("oai") => ("openai", "gpt-5", "oai"),
+        Some("cld") => ("anthropic", "claude-opus-4-6", "cld"),
+        Some("xai") => ("xai", "grok-4", "xai"),
+        Some("co") => ("cohere", "command-a-03-2025", "co"),
+        Some("gem") | None => ("gemini", "gemini-3.0-flash", "gem"),
+        Some(unknown) => bail!(
+            "❌ Unknown feature '{}'. Supported features are: gem, hf, oai, cld, xai, co.",
+            unknown
+        ),
+    };
+
+    let yaml_content = format!(
+        r#"name: {name}
+ai_provider: {provider}
+model: {model}
+persona: Backend Engineer
+role: user
+prompt: |
+  Describe a scalable microservice architecture.
+"#
+    );
 
     spinner("📦 Scaffolding project", || {
         Command::new("cargo")
@@ -39,7 +53,7 @@ pub fn handle_new(name: &str) -> Result<()> {
             .status()
             .context("Failed to create cargo project")?;
 
-        fs::write(path.join("agent.yaml"), DEFAULT_YAML.trim_start())?;
+        fs::write(path.join("agent.yaml"), yaml_content.trim_start())?;
         fs::write(
             path.join("README.md"),
             format!("# {name}\n\nCreated with `autogpt new`."),
@@ -54,7 +68,7 @@ pub fn handle_new(name: &str) -> Result<()> {
         let deps = deps.as_table_mut().unwrap();
 
         let mut tokio_table = InlineTable::new();
-        tokio_table.insert("version", Value::from("1.45.1"));
+        tokio_table.insert("version", Value::from("1.52.2"));
         tokio_table.insert(
             "features",
             Value::Array({
@@ -72,7 +86,7 @@ pub fn handle_new(name: &str) -> Result<()> {
             "features",
             Value::Array({
                 let mut a = Array::default();
-                a.push("gem");
+                a.push(feat_flag);
                 a
             }),
         );
@@ -81,12 +95,12 @@ pub fn handle_new(name: &str) -> Result<()> {
         let features = doc["features"].or_insert(Item::Table(Table::new()));
         let f_table = features.as_table_mut().unwrap();
 
-        let mut gem_array = Array::default();
-        gem_array.push("autogpt/gem");
-        f_table.insert("gem", Item::Value(Value::Array(gem_array)));
-
-        for feat in ["net", "mem", "oai", "cld", "xai", "co", "hf"] {
-            f_table.insert(feat, Item::Value(Value::Array(Array::default())));
+        for feat in ["gem", "net", "mem", "oai", "cld", "xai", "co", "hf"] {
+            let mut arr = Array::default();
+            if feat == feat_flag {
+                arr.push(format!("autogpt/{}", feat));
+            }
+            f_table.insert(feat, Item::Value(Value::Array(arr)));
         }
 
         fs::write(&cargo_toml_path, doc.to_string())?;

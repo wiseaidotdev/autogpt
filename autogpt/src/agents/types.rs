@@ -15,7 +15,6 @@ use crate::agents::frontend::FrontendGPT;
 use crate::agents::git::GitGPT;
 use crate::agents::optimizer::OptimizerGPT;
 use crate::common::utils::Task;
-#[allow(unused_imports)]
 #[cfg(feature = "hf")]
 #[allow(unused_imports)]
 use crate::prelude::hf_model_from_str;
