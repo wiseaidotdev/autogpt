@@ -91,7 +91,7 @@ To embed AutoGPT in your own Rust project, add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-autogpt = { version = "0.2", features = ["gem", "gpt"] }
+autogpt = { version = "0.3.4", features = ["gem", "gpt"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
