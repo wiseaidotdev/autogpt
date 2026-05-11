@@ -16,6 +16,7 @@ use crate::agents::backend::BackendGPT;
 #[cfg(feature = "img")]
 use crate::agents::designer::DesignerGPT;
 use crate::agents::frontend::FrontendGPT;
+#[cfg(feature = "git")]
 use crate::agents::git::GitGPT;
 use crate::agents::types::AgentType;
 use crate::common::utils::Task;

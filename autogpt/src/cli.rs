@@ -10,6 +10,8 @@ pub mod autogpt;
 pub mod models;
 pub mod orchgpt;
 #[cfg(feature = "cli")]
+pub mod readline;
+#[cfg(feature = "cli")]
 pub mod session;
 #[cfg(feature = "cli")]
 pub mod skills;

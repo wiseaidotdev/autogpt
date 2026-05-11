@@ -12,129 +12,103 @@ use anyhow::Result;
 /// This function parses command-line arguments using the `clap` crate, sets up agent configurations
 /// based on the provided options, and executes operations according to the specified subcommand.
 ///
-/// `autogpt` supports two modes of operation:
+/// `autogpt` supports four modes of operation:
 ///
-/// 1. **Networking Mode**: In this mode, `autogpt` acts as a networked agent that communicates
-///    with an orchestrator over TLS-encrypted TCP. The orchestrator must be running on a machine
-///    via the `orchgpt` command. `autogpt` can then connect to it either from the same machine or
-///    from another machine.
+/// 1. **Interactive Mode (Default)**: Launches an interactive AI shell powered by GenericGPT
+///    when run with no subcommands or flags. It features session persistence, model switching,
+///    and multi-provider support.
 ///
-/// 2. **Networkless (Agentic) Mode**: In this standalone mode, `autogpt` operates independently
-///    without requiring a network connection to an orchestrator. It runs locally, executing tasks
-///    based solely on local configurations and input.
-//
+/// 2. **Direct Prompt Mode**: Uses the `-p` flag to interact with the LLM directly without
+///    configuring agents. Can be combined with `--mixture` for multi-provider responses.
+///
+/// 3. **Agentic Networkless Mode (Standalone)**: Runs individual specialized agents directly
+///    via subcommands (e.g., `arch`, `back`, `front`). Each agent operates independently
+///    without a networked orchestrator.
+///
+/// 4. **Agentic Networking Mode (Orchestrated)**: Connects to an external orchestrator (`orchgpt`)
+///    over a secure TLS-encrypted TCP channel using the IAC protocol for distributed collaboration.
+///
 /// This flexible design allows `autogpt` to be deployed in a distributed multi-agent environment
-/// or as a single self-contained agents.
+/// or as a single self-contained agent.
 #[tokio::main]
 async fn main() -> Result<()> {
     #[cfg(feature = "cli")]
     {
-        use anyhow::anyhow;
+        #[allow(unused_imports)]
+        use {
+            anyhow::anyhow,
+            clap::Parser,
+            colored::Colorize,
+            std::env,
+            termimad::MadSkin,
+            tracing::{error, info, warn},
+        };
+
+        use autogpt::{
+            cli::autogpt::{
+                Cli, Commands,
+                commands::{build, new, run, test},
+            },
+            common::utils::{fetch_latest_version, is_outdated, setup_logging},
+            prelude::ClientType,
+        };
+
         #[cfg(feature = "gpt")]
-        use autogpt::agents::architect::ArchitectGPT;
-        #[cfg(feature = "gpt")]
-        use autogpt::agents::backend::BackendGPT;
-        #[cfg(feature = "gpt")]
-        use autogpt::agents::designer::DesignerGPT;
-        #[cfg(feature = "gpt")]
-        use autogpt::agents::frontend::FrontendGPT;
+        use {
+            autogpt::{
+                agents::{
+                    architect::ArchitectGPT, backend::BackendGPT, designer::DesignerGPT,
+                    frontend::FrontendGPT, manager::ManagerGPT, optimizer::OptimizerGPT,
+                },
+                common::{
+                    input::read_user_input,
+                    utils::{Scope, Task, ask_to_run_command},
+                },
+                traits::functions::{AsyncFunctions, Functions},
+            },
+            std::env::var,
+        };
+
         #[cfg(all(feature = "gpt", feature = "git"))]
         use autogpt::agents::git::GitGPT;
+
         #[cfg(all(feature = "gpt", feature = "mail"))]
         use autogpt::agents::mailer::MailerGPT;
-        #[cfg(feature = "gpt")]
-        use autogpt::agents::manager::ManagerGPT;
+
         #[cfg(feature = "mop")]
         use autogpt::agents::mop::run_mixture;
-        #[cfg(feature = "gpt")]
-        use autogpt::agents::optimizer::OptimizerGPT;
-        use autogpt::cli::autogpt::commands::{build, new, run, test};
-        use autogpt::cli::autogpt::{Cli, Commands};
-        #[cfg(feature = "gpt")]
-        use autogpt::common::input::read_user_input;
-        #[cfg(feature = "gpt")]
-        use autogpt::common::utils::Scope;
-        #[cfg(feature = "gpt")]
-        use autogpt::common::utils::Task;
-        #[cfg(feature = "gpt")]
-        use autogpt::common::utils::ask_to_run_command;
-        use autogpt::common::utils::fetch_latest_version;
-        use autogpt::common::utils::is_outdated;
-        use autogpt::common::utils::setup_logging;
-        #[cfg(feature = "gem")]
-        use autogpt::prelude::CTrait;
-        use autogpt::prelude::ClientType;
-        #[cfg(feature = "gpt")]
-        use autogpt::traits::functions::AsyncFunctions;
-        #[cfg(feature = "gpt")]
-        use autogpt::traits::functions::Functions;
-        use clap::Parser;
 
-        #[allow(unused_imports)]
-        use colored::Colorize;
+        #[cfg(feature = "gem")]
+        use {
+            autogpt::prelude::CTrait,
+            gems::{
+                messages::{Content, Message as GemMessage},
+                models::Model,
+                stream::StreamBuilder,
+                utils::extract_text_from_partial_json,
+            },
+        };
+
         #[cfg(any(feature = "gem", feature = "oai", feature = "cld"))]
         use futures_util::StreamExt;
-        #[cfg(feature = "gem")]
-        use gems::messages::Content;
-        #[cfg(feature = "gem")]
-        use gems::messages::Message as GemMessage;
-        #[cfg(feature = "gem")]
-        use gems::models::Model;
-        #[cfg(feature = "gem")]
-        use gems::stream::StreamBuilder;
-        #[cfg(feature = "gem")]
-        use gems::utils::extract_text_from_partial_json;
-        #[cfg(feature = "net")]
-        use iac_rs::message::Message;
-        #[cfg(feature = "net")]
-        use iac_rs::prelude::*;
-        use std::env;
-        #[cfg(feature = "gpt")]
-        use std::env::var;
-        #[cfg(any(
-            feature = "gem",
-            feature = "oai",
-            feature = "cld",
-            feature = "xai",
-            feature = "co",
-            feature = "hf",
-            feature = "net"
-        ))]
-        use std::io::Write;
-        #[cfg(feature = "net")]
-        use std::sync::Arc;
-        #[cfg(any(
-            feature = "gem",
-            feature = "oai",
-            feature = "cld",
-            feature = "xai",
-            feature = "co",
-            feature = "hf",
-            feature = "net"
-        ))]
-        use std::thread;
-        use termimad::MadSkin;
-        #[cfg(feature = "net")]
-        use tokio::io::AsyncBufReadExt;
-        #[cfg(feature = "net")]
-        use tokio::signal;
-        #[cfg(feature = "net")]
-        use tokio::sync::Mutex;
-        #[cfg(any(
-            feature = "gem",
-            feature = "oai",
-            feature = "cld",
-            feature = "xai",
-            feature = "co",
-            feature = "hf",
-            feature = "net"
-        ))]
-        use tokio::time::Duration;
-        #[cfg(feature = "net")]
-        use tokio::time::timeout;
-        #[allow(unused_imports)]
-        use tracing::{error, info, warn};
 
+        #[cfg(feature = "net")]
+        use {
+            iac_rs::{message::Message, prelude::*},
+            std::sync::Arc,
+            tokio::{io::AsyncBufReadExt, signal, sync::Mutex, time::timeout},
+        };
+
+        #[cfg(any(
+            feature = "gem",
+            feature = "oai",
+            feature = "cld",
+            feature = "xai",
+            feature = "co",
+            feature = "hf",
+            feature = "net"
+        ))]
+        use {std::io::Write, std::thread, tokio::time::Duration};
         setup_logging()?;
 
         let args: Cli = Cli::parse();
@@ -583,7 +557,7 @@ async fn main() -> Result<()> {
             #[cfg(feature = "gpt")]
             let language = "python";
 
-            #[cfg(feature = "gpt")]
+            #[cfg(all(feature = "gpt", feature = "git"))]
             let mut _git_agent = GitGPT::default();
             #[cfg(feature = "gpt")]
             let mut _optimizer_gpt = OptimizerGPT::default();
@@ -599,7 +573,10 @@ async fn main() -> Result<()> {
                         feature: _
                     }
             ) {
-                _git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
+                #[cfg(all(feature = "gpt", feature = "git"))]
+                {
+                    _git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
+                }
                 let behavior =
                     "Expertise lies in modularizing monolithic source code into clean components";
                 let persona = "OptimizerGPT";
@@ -620,6 +597,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -663,6 +641,7 @@ async fn main() -> Result<()> {
                 Commands::Arch => {
                     let behavior = "Expertise at managing projects at scale";
                     let persona = "ArchitectGPT";
+                    #[cfg(all(feature = "gpt", feature = "git"))]
                     let mut git_agent = GitGPT::default();
                     let mut architect_agent = ArchitectGPT::new(persona, behavior).await;
                     let workspace = workspace.clone() + "architect";
@@ -673,6 +652,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -724,7 +704,10 @@ async fn main() -> Result<()> {
                                     .green()
                                     .bold()
                             );
-                            let _ = git_agent.execute(&mut task, true, false, 1).await;
+                            #[cfg(all(feature = "gpt", feature = "git"))]
+                            {
+                                let _ = git_agent.execute(&mut task, true, false, 1).await;
+                            }
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
 
                             if let Err(e) = ask_to_run_command(
@@ -765,6 +748,7 @@ async fn main() -> Result<()> {
                 Commands::Front => {
                     let behavior = "Expertise lies in writing frontend code";
                     let persona = "FrontendGPT";
+                    #[cfg(all(feature = "gpt", feature = "git"))]
                     let mut git_agent = GitGPT::default();
                     let workspace = workspace.clone() + "frontend";
                     let mut frontend_agent = FrontendGPT::new(persona, behavior, language).await;
@@ -776,6 +760,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -828,7 +813,10 @@ async fn main() -> Result<()> {
                                     .green()
                                     .bold()
                             );
-                            let _ = git_agent.execute(&mut task, true, false, 1).await;
+                            #[cfg(all(feature = "gpt", feature = "git"))]
+                            {
+                                let _ = git_agent.execute(&mut task, true, false, 1).await;
+                            }
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
 
                             if let Err(e) = ask_to_run_command(
@@ -869,6 +857,7 @@ async fn main() -> Result<()> {
                     let behavior =
                         "Expertise lies in writing backend code for web servers and databases";
                     let persona = "BackendGPT";
+                    #[cfg(all(feature = "gpt", feature = "git"))]
                     let mut git_agent = GitGPT::default();
                     let workspace = workspace.clone() + "backend";
                     let mut backend_gpt = BackendGPT::new(persona, behavior, language).await;
@@ -893,6 +882,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -933,7 +923,10 @@ async fn main() -> Result<()> {
                                     .green()
                                     .bold()
                             );
-                            let _ = git_agent.execute(&mut task, true, false, 1).await;
+                            #[cfg(all(feature = "gpt", feature = "git"))]
+                            {
+                                let _ = git_agent.execute(&mut task, true, false, 1).await;
+                            }
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
 
                             if let Err(e) = ask_to_run_command(
@@ -973,6 +966,7 @@ async fn main() -> Result<()> {
                 Commands::Design => {
                     let behavior = "Crafts stunning web design layouts";
                     let persona = "Web Designer";
+                    #[cfg(all(feature = "gpt", feature = "git"))]
                     let mut git_agent = GitGPT::default();
                     let mut designer_agent = DesignerGPT::new(persona, behavior).await;
                     let mut task = Task {
@@ -991,6 +985,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -1030,7 +1025,10 @@ async fn main() -> Result<()> {
                                     .bold()
                             );
 
-                            git_agent.execute(&mut task, true, false, 1).await?;
+                            #[cfg(all(feature = "gpt", feature = "git"))]
+                            {
+                                git_agent.execute(&mut task, true, false, 1).await?;
+                            }
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -1039,7 +1037,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-                #[cfg(feature = "gpt")]
+                #[cfg(all(feature = "gpt", feature = "mail"))]
                 Commands::Mail => {
                     let behavior = "Expertise at summarizing emails";
                     let persona = "Mailer";
@@ -1064,6 +1062,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -1094,7 +1093,10 @@ async fn main() -> Result<()> {
                             );
                             task.description = input.into();
 
-                            let _ = mailer_agent.execute(&mut task, true, false, 3).await;
+                            #[cfg(all(feature = "gpt", feature = "mail"))]
+                            {
+                                let _ = mailer_agent.execute(&mut task, true, false, 3).await;
+                            }
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -1103,7 +1105,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-                #[cfg(feature = "gpt")]
+                #[cfg(all(feature = "gpt", feature = "git"))]
                 Commands::Git => {
                     let behavior = "Expertise at managing git repositories";
                     let persona = "GitGPT";
@@ -1128,6 +1130,7 @@ async fn main() -> Result<()> {
                     );
 
                     loop {
+                        #[allow(unused_mut)]
                         let mut input = read_user_input()?;
 
                         #[cfg(feature = "mop")]
@@ -1158,7 +1161,10 @@ async fn main() -> Result<()> {
                             );
                             task.description = input.into();
 
-                            let _result = git_agent.execute(&mut task, true, false, 1).await;
+                            #[cfg(all(feature = "gpt", feature = "git"))]
+                            {
+                                let _result = git_agent.execute(&mut task, true, false, 1).await;
+                            }
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -1226,6 +1232,14 @@ async fn main() -> Result<()> {
                     anyhow::bail!(
                         "Agentic commands require the 'gpt' feature. Recompile with --features gpt."
                     );
+                }
+                #[cfg(all(feature = "gpt", not(feature = "mail")))]
+                Commands::Mail => {
+                    anyhow::bail!("Mail feature required. Recompile with --features mail.");
+                }
+                #[cfg(all(feature = "gpt", not(feature = "git")))]
+                Commands::Git => {
+                    anyhow::bail!("Git feature required. Recompile with --features git.");
                 }
                 Commands::New { name, feature } => new::handle_new(&name, feature)?,
                 Commands::Build { out } => build::handle_build(out)?,
