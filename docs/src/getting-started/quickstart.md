@@ -23,7 +23,7 @@ Add AutoGPT to `Cargo.toml`:
 
 ```toml
 [dependencies]
-autogpt = { version = "0.3.4", features = ["gem", "gpt"] }
+autogpt = { version = "0.3.5", features = ["gem", "gpt"] }
 tokio   = { version = "1",   features = ["full"] }
 ```
 

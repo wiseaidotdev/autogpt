@@ -8,7 +8,7 @@ Add the `mem` feature flag:
 
 ```toml
 [dependencies]
-autogpt = { version = "0.3.4", features = ["gem", "gpt", "mem"] }
+autogpt = { version = "0.3.5", features = ["gem", "gpt", "mem"] }
 ```
 
 Set the Pinecone environment variables:
