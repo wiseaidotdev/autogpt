@@ -125,16 +125,6 @@ pub fn render_update_banner(current: &str, latest: &str) {
     render_warning_box(&msg);
 }
 
-/// Renders the bordered input prompt box hint.
-///
-/// This is printed above the `>` prompt to visually delimit the user input area.
-#[cfg(feature = "cli")]
-pub fn render_input_box_hint() {
-    let inner_width = BOX_WIDTH - 2;
-    let top = format!("╭{}╮", "─".repeat(inner_width));
-    info!("{}", top.bright_blue());
-}
-
 /// Renders the help table for all available slash commands.
 #[cfg(feature = "cli")]
 pub fn render_help_table() {

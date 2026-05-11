@@ -38,13 +38,13 @@ use crate::traits::functions::ReqResponse;
 #[cfg(feature = "cli")]
 use {
     crate::cli::models::{default_model, default_provider, model_index, provider_models},
+    crate::cli::readline::{ReadlineResult, SLASH_COMMANDS, read_line},
     crate::cli::session::{Session, SessionManager, SessionTask, TaskStatus as SessionTaskStatus},
     crate::cli::skills::SkillStore,
     crate::cli::tui::{
         TaskStatus as TuiTaskStatus, create_spinner, print_agent_msg, print_banner, print_error,
-        print_greeting, print_section, print_status_bar, print_success, print_task_item,
-        print_warning, render_help_table, render_input_box_hint, render_markdown,
-        render_model_selector, render_warning_box,
+        print_greeting, print_section, print_success, print_task_item, print_warning,
+        render_help_table, render_markdown, render_model_selector, render_warning_box,
     },
     crate::prompts::generic::{
         FOLLOWUP_SYNTHESIS_PROMPT, GENERIC_SYSTEM_PROMPT, IMPLEMENTATION_PLAN_PROMPT,
@@ -62,6 +62,9 @@ use {
     termimad::crossterm::event::{self, Event, KeyCode},
     tracing::{error, info, warn},
 };
+
+#[cfg(feature = "cli")]
+const MAX_CONSECUTIVE_FAILURES: u8 = 3;
 
 /// The operational phase of the generic agent within a session lifecycle.
 #[cfg(feature = "cli")]
@@ -252,7 +255,7 @@ impl Executor for GenericAgent {
         let skills_context = skills.to_prompt_context();
 
         let model = if self.model.is_empty() {
-            "gemini-2.5-flash".to_string()
+            "gemini-3.0-flash".to_string()
         } else {
             self.model.clone()
         };
@@ -284,7 +287,7 @@ impl Executor for GenericAgent {
             }
             Err(e) => {
                 task_spinner.finish_and_clear();
-                print_error(&format!("Task synthesis failed: {e}"));
+                // print_error(&format!("Task synthesis failed: {e}"));
                 return Err(e);
             }
         };
@@ -351,7 +354,9 @@ impl Executor for GenericAgent {
         let tasks_snapshot = session.tasks.clone();
         let total = tasks_snapshot.len();
 
-        for (idx, task_item) in tasks_snapshot.iter().enumerate() {
+        let mut consecutive_failures: u8 = 0;
+
+        'task_loop: for (idx, task_item) in tasks_snapshot.iter().enumerate() {
             print_task_item(&task_item.description, TuiTaskStatus::InProgress);
             session.update_task_status(idx, SessionTaskStatus::InProgress);
             session_mgr.save(&session)?;
@@ -383,7 +388,20 @@ impl Executor for GenericAgent {
                 .await;
             session.add_reasoning(&reasoning.thought);
 
-            let mut results = self
+            if !reasoning.thought.trim().is_empty() {
+                info!(
+                    "  \x1b[2m> {}\x1b[0m",
+                    reasoning.thought.chars().take(300).collect::<String>()
+                );
+            }
+            if !reasoning.approach.trim().is_empty() {
+                info!(
+                    "  \x1b[2m> Approach: {}\x1b[0m",
+                    reasoning.approach.chars().take(200).collect::<String>()
+                );
+            }
+
+            let execute_result = self
                 .execute_task(
                     &prompt,
                     task_item,
@@ -395,10 +413,87 @@ impl Executor for GenericAgent {
                     &mut session,
                     &reasoning,
                 )
-                .await
-                .unwrap_or_default();
+                .await;
+
+            let mut results = match execute_result {
+                Ok(r) => r,
+                Err(e) => {
+                    exec_spinner.finish_and_clear();
+                    let err_str = e.to_string();
+                    if err_str.contains("402")
+                        || err_str.contains("Payment")
+                        || err_str.contains("quota")
+                        || err_str.contains("credits")
+                        || err_str.contains("Unauthorized")
+                        || err_str.contains("Missing")
+                        || err_str.contains("401")
+                    {
+                        print_error(&format!("LLM provider error: {err_str}"));
+                        print_error(
+                            "Aborting task execution, resolve the provider issue and retry.",
+                        );
+                        session.update_task_status(idx, SessionTaskStatus::Failed);
+                        session_mgr.save(&session)?;
+                        return Err(e);
+                    }
+                    print_warning(&format!("Task execution error (continuing): {err_str}"));
+                    vec![]
+                }
+            };
 
             exec_spinner.finish_and_clear();
+
+            let files_before = session.files_created.len();
+            let any_success = results.iter().any(|r| r.success);
+
+            if !any_success && session.files_created.len() == files_before {
+                for r in &results {
+                    if !r.stdout.trim().is_empty() {
+                        warn!(
+                            "  \x1b[90m[{}] stdout: {}\x1b[0m",
+                            r.action_type,
+                            r.stdout.trim().chars().take(300).collect::<String>()
+                        );
+                    }
+                    if !r.stderr.trim().is_empty() {
+                        warn!(
+                            "  \x1b[90m[{}] stderr: {}\x1b[0m",
+                            r.action_type,
+                            r.stderr.trim().chars().take(300).collect::<String>()
+                        );
+                    }
+                }
+
+                consecutive_failures += 1;
+                print_warning(&format!(
+                    "No concrete actions succeeded for task {}/{} (consecutive failures: {}/{}).",
+                    idx + 1,
+                    total,
+                    consecutive_failures,
+                    MAX_CONSECUTIVE_FAILURES
+                ));
+
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    print_error(&format!(
+                        "Aborting: {} consecutive tasks produced no output. \
+                         Check your API key, model, and prompt quality.",
+                        MAX_CONSECUTIVE_FAILURES
+                    ));
+                    for fi in idx..total {
+                        session.update_task_status(fi, SessionTaskStatus::Failed);
+                    }
+                    session_mgr.save(&session)?;
+                    break 'task_loop;
+                }
+
+                print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                session.update_task_status(idx, SessionTaskStatus::Failed);
+                session_mgr.save(&session)?;
+                results = vec![];
+                continue 'task_loop;
+            }
+
+            consecutive_failures = 0;
 
             let mut retry_count: u8 = 0;
             loop {
@@ -491,6 +586,9 @@ impl Executor for GenericAgent {
         wt_spinner.finish_and_clear();
         session.set_walkthrough(&walkthrough);
         session_mgr.save(&session)?;
+
+        print_section("📓 Session Walkthrough");
+        render_markdown(&walkthrough);
 
         let wt_path = session_mgr.base_dir.join("walkthrough.md");
         fs::write(&wt_path, &walkthrough)?;
@@ -591,8 +689,8 @@ impl GenericAgent {
         }
 
         Err(anyhow!(
-            "LLM returned malformed task list. Raw output: {}",
-            &raw[..raw.len().min(200)]
+            "LLM returned malformed task list.",
+            // &raw[..raw.len().min(200)]
         ))
     }
 
@@ -1636,25 +1734,47 @@ pub async fn run_generic_agent_loop(
         ..Default::default()
     };
 
-    loop {
-        if let Ok(cwd) = std::env::current_dir() {
-            print_status_bar(&cwd.to_string_lossy(), &current_model, &current_provider);
+    let mut input_history: Vec<String> = Vec::new();
+
+    'outer: loop {
+        let cwd_str = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+
+        let status_line = format!(
+            "  \x1b[94m{}\x1b[0m  \x1b[95m{}\x1b[0m  \x1b[90m{}\x1b[0m",
+            cwd_str, current_model, current_provider
+        );
+
+        #[allow(unused_mut)]
+        let mut input = match read_line(
+            &status_line,
+            "Type your request, or /help for commands",
+            SLASH_COMMANDS,
+            &input_history,
+        ) {
+            ReadlineResult::Submit(s) => s,
+            ReadlineResult::Interrupted => {
+                print_success("Session saved. Goodbye!");
+                break;
+            }
+            ReadlineResult::Error(e) => {
+                print_error(&format!("Input error: {e}"));
+                continue;
+            }
+        };
+
+        if input.is_empty() {
+            print_warning("Please enter a prompt to work on.");
+            continue;
         }
 
-        render_input_box_hint();
-        info!(
-            "{} {}",
-            ">".bright_blue().bold(),
-            "Type your request, or /help for commands".bright_black()
-        );
-        print!("> ");
-        io::stdout().flush()?;
-
-        let stdin = io::stdin();
-        let mut line = String::new();
-        stdin.lock().read_line(&mut line)?;
-        #[allow(unused_mut)]
-        let mut input = line.trim().to_string();
+        if !input.starts_with('/')
+            && !input.eq_ignore_ascii_case("exit")
+            && !input.eq_ignore_ascii_case("quit")
+        {
+            input_history.push(input.clone());
+        }
 
         #[cfg(feature = "mop")]
         if _mixture
@@ -1665,11 +1785,6 @@ pub async fn run_generic_agent_loop(
             print_success(&format!("MoP selected response from: {provider}"));
             render_markdown(&response);
             input = format!("High-quality context from {provider}: {response}\n\nTask: {input}");
-        }
-
-        if input.is_empty() {
-            print_warning("Please enter a prompt to work on.");
-            continue;
         }
 
         if input.eq_ignore_ascii_case("exit") || input.eq_ignore_ascii_case("quit") {
@@ -1842,6 +1957,14 @@ pub async fn run_generic_agent_loop(
             continue;
         }
 
+        if input.starts_with('/') {
+            print_warning(&format!(
+                "Unknown command: `{}`. Type /help for available commands.",
+                input
+            ));
+            continue;
+        }
+
         if let Some(ref prior) = active_session {
             info!(
                 "  {} {}",
@@ -1948,7 +2071,20 @@ pub async fn run_generic_agent_loop(
                     .await;
                 new_session.add_reasoning(&reasoning.thought);
 
-                let results = agent
+                if !reasoning.thought.trim().is_empty() {
+                    info!(
+                        "  \x1b[2m> {}\x1b[0m",
+                        reasoning.thought.chars().take(300).collect::<String>()
+                    );
+                }
+                if !reasoning.approach.trim().is_empty() {
+                    info!(
+                        "  \x1b[2m> Approach: {}\x1b[0m",
+                        reasoning.approach.chars().take(200).collect::<String>()
+                    );
+                }
+
+                let exec_result = agent
                     .execute_task(
                         &input,
                         task_item,
@@ -1960,8 +2096,42 @@ pub async fn run_generic_agent_loop(
                         &mut new_session,
                         &reasoning,
                     )
-                    .await
-                    .unwrap_or_default();
+                    .await;
+
+                let results = match exec_result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        if err_str.contains("402")
+                            || err_str.contains("Payment")
+                            || err_str.contains("quota")
+                            || err_str.contains("credits")
+                            || err_str.contains("Unauthorized")
+                            || err_str.contains("Missing")
+                            || err_str.contains("401")
+                        {
+                            print_error(&format!("LLM provider error: {err_str}"));
+                            print_error(
+                                "Aborting follow-up tasks, resolve the provider issue and retry.",
+                            );
+                            new_session.update_task_status(idx, SessionTaskStatus::Failed);
+                            session_mgr.save(&new_session)?;
+                            active_session = Some(new_session);
+                            continue 'outer;
+                        }
+                        print_warning(&format!("Task execution error (continuing): {err_str}"));
+                        vec![]
+                    }
+                };
+
+                let files_before = new_session.files_created.len();
+                let any_success = results.iter().any(|r| r.success);
+                if !any_success && new_session.files_created.len() == files_before {
+                    print_warning(
+                        "No concrete actions succeeded and no files were written. \
+                         The LLM may have returned empty output.",
+                    );
+                }
 
                 let reflection = agent
                     .reflect_on_task(task_item, &results, 0)
@@ -2029,7 +2199,8 @@ pub async fn run_generic_agent_loop(
                                     active_session = Some(s);
                             }
                     }
-                    Err(e) => print_error(&format!("Agent error: {e:?}")),
+                    // Err(e) => print_error(&format!("Agent error: {e:?}")),
+                    Err(_e) => {},
                 }
             }
             _ = &mut interrupt_handle => {
