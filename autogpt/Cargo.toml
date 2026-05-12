@@ -41,7 +41,7 @@ iac-rs = { workspace = true, optional = true }
 
 uuid = { version = "=1.23.1", features = ["v4"] }
 tokio = { version = "=1.52.2", default-features = false, features = ["full"] }
-reqwest = { version = "^0.12.24", features = ["json", "stream"] }
+reqwest = { version = "^0.12.24", features = ["json", "stream", "blocking"] }
 serde = { version = "1.0.228", features = ["derive"] }
 gems = { version = "0.1.5", optional = true }
 getimg = { version = "0.0.1", optional = true }
@@ -100,6 +100,7 @@ cli = [
     "tracing-appender",
     "tracing-subscriber",
 ]
+mcp = ["dirs"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -107,3 +108,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [badges]
 maintenance = { status = "actively-developed" }
+
+[dev-dependencies]
+tempfile = "3"

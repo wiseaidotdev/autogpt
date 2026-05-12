@@ -1,0 +1,19 @@
+[package]
+name = "mcp-custom-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.52.2", features = ["full"] }
+autogpt = { path = "../../autogpt", default-features = false, features = ["gem", "mcp"] }
+
+[features]
+gem = ["autogpt/gem"]
+net = []
+mem = []
+mcp = []
+oai = []
+cld = []
+xai = []
+co = []
+hf = []

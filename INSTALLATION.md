@@ -12,10 +12,10 @@ To install AutoGPT CLI via Cargo, execute the following command:
 cargo install autogpt --all-features
 ```
 
-To install with specific features (e.g., MoP and Gemini):
+To install with specific features (e.g., MoP, Gemini, and MCP):
 
 ```sh
-cargo install autogpt --features "cli,gem,mop"
+cargo install autogpt --features "cli,gem,mop,mcp"
 ```
 
 ### 🐳 Using Docker

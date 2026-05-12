@@ -99,6 +99,16 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             fn context_mut(&mut self) -> &mut ContextManager {
                 &mut self.agent.context
             }
+
+            #[cfg(feature = "mcp")]
+            fn mcp_servers(&self) -> &[::autogpt::mcp::settings::McpServerConfig] {
+                &self.agent.mcp_servers
+            }
+
+            #[cfg(feature = "mcp")]
+            fn mcp_servers_mut(&mut self) -> &mut Vec<::autogpt::mcp::settings::McpServerConfig> {
+                &mut self.agent.mcp_servers
+            }
         }
 
         impl Functions for #name {

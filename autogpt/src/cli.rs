@@ -14,6 +14,8 @@ pub mod readline;
 #[cfg(feature = "cli")]
 pub mod session;
 #[cfg(feature = "cli")]
+pub mod settings;
+#[cfg(feature = "cli")]
 pub mod skills;
 #[cfg(feature = "cli")]
 pub mod tui;

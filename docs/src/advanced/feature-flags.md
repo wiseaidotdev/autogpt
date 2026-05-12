@@ -12,6 +12,7 @@ AutoGPT's `Cargo.toml` uses feature flags to keep the binary lean. Only compile 
 | `xai`   | XAI Grok client (`x-ai` crate)                                                            | `XAI_API_KEY`                            |
 | `co`    | Cohere client (`cohere-rust` crate)                                                       | `COHERE_API_KEY`                         |
 | `hf`    | HuggingFace client (`api_huggingface` crate)                                              | `HF_API_KEY`                             |
+| `mcp`   | Model Context Protocol (MCP) support                                                      | N/A                                      |
 | `gpt`   | All built-in GPT agents (ManagerGPT, ArchitectGPT, BackendGPT, FrontendGPT, OptimizerGPT) | One LLM feature                          |
 | `img`   | DesignerGPT image generation (`getimg` crate)                                             | `GETIMG_API_KEY`                         |
 | `git`   | GitGPT auto-commit (`git2` crate)                                                         | Git repo in workspace                    |

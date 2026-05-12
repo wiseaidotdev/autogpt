@@ -1,0 +1,9 @@
+[package]
+name = "mcp-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.52.2", features = ["full"] }
+serde_json = "1"
+autogpt = { path = "../../autogpt", default-features = false, features = ["mcp"] }

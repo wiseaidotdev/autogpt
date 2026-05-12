@@ -40,6 +40,12 @@
 
 - [IAC Protocol](./advanced/iac-protocol.md)
 - [Orchestrator](./advanced/orchestrator.md)
+- [Model Context Protocol](./advanced/mcp.md)
+  - [CLI Reference](./advanced/mcp-cli.md)
+  - [TUI Commands](./advanced/mcp-tui.md)
+  - [Secrets & Env](./advanced/mcp-env.md)
+  - [Authentication](./advanced/mcp-auth.md)
+  - [SDK Usage](./advanced/mcp-sdk.md)
 - [Long-Term Memory](./advanced/memory-pinecone.md)
 - [Feature Flags](./advanced/feature-flags.md)
 - [Docker Deployment](./advanced/docker.md)

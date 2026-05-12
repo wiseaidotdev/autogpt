@@ -318,6 +318,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
  "termimad",
  "tokio",
  "toml_edit 0.23.10+spec-1.0.0",

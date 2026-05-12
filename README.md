@@ -55,6 +55,7 @@ AutoGPT agents are modular and autonomous, built from composable components:
 - 🧑‍🤝‍🧑 **Collaboration**: Agents can delegate, swarm, or work in teams with other agents.
 - 🪞 **Self-Reflection**: Introspection module to debug, adapt, or evolve internal strategies.
 - 🔄 **Context Management**: Manages active memory (context window) for ongoing tasks and conversations.
+- 🔌 **MCP (Model Context Protocol)**: Seamlessly connect to external tool servers (Stdio, SSE, HTTP) to extend agent capabilities with thousands of existing tools.
 - 📅 **Scheduler**: Time-based or reactive triggers for agent actions.
 
 ### 🚀 Developer Features
@@ -63,6 +64,7 @@ AutoGPT is designed for flexibility, integration, and scalability:
 
 - 🧪 **Custom Agent Creation**: Build tailored agents for different roles or domains.
 - 📋 **Task Orchestration**: Manage and distribute tasks across agents efficiently.
+- 🔌 **MCP Integration**: First-class support for the Model Context Protocol to unify tool access.
 - 🧱 **Extensibility**: Add new tools, behaviors, or agent types with ease.
 - 💻 **CLI Tools**: Command-line interface for rapid experimentation and control.
 - 🧰 **SDK Support**: Embed AutoGPT into existing projects or systems seamlessly.

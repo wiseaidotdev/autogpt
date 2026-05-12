@@ -20,6 +20,8 @@ pub mod utils;
 use clap::{Parser, Subcommand};
 
 #[cfg(feature = "cli")]
+use clap::Subcommand as ClapSubcommand;
+#[cfg(feature = "cli")]
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 
 /// Defines custom styles for CLI output.
@@ -231,6 +233,109 @@ pub enum Commands {
         about = "OptimizerGPT: Specializes in refactoring monolithic codebases into clean, modular components."
     )]
     Opt,
+
+    /// Manage MCP (Model Context Protocol) server registrations.
+    ///
+    /// Add, list, remove, and inspect MCP servers that provide external tools
+    /// to the CLI, TUI, and code-defined agents.
+    #[clap(
+        name = "mcp",
+        about = "Manage MCP server configurations and inspect available tools."
+    )]
+    #[cfg(all(feature = "cli", feature = "mcp"))]
+    Mcp {
+        /// MCP subcommand.
+        #[command(subcommand)]
+        subcommand: McpSubcommand,
+    },
+}
+
+/// Subcommands available under `autogpt mcp`.
+#[cfg(feature = "cli")]
+#[derive(ClapSubcommand, Debug, PartialEq)]
+pub enum McpSubcommand {
+    /// Register a new MCP server.
+    #[clap(name = "add", about = "Register a new MCP server")]
+    Add(Box<McpAddArgs>),
+
+    /// List all registered MCP servers and their live connection status.
+    #[clap(name = "list", about = "List all configured MCP servers")]
+    List,
+
+    /// Remove a registered MCP server.
+    #[clap(name = "remove", about = "Remove a registered MCP server")]
+    Remove {
+        /// Name of the server to remove.
+        name: String,
+    },
+
+    /// Show detailed information and available tools for a specific MCP server.
+    #[clap(name = "inspect", about = "Inspect an MCP server and list its tools")]
+    Inspect {
+        /// Name of the server to inspect.
+        name: String,
+    },
+
+    /// Call a specific tool on a registered MCP server.
+    #[clap(name = "call", about = "Call an MCP tool")]
+    Call {
+        /// Name of the server.
+        server: String,
+        /// Name of the tool.
+        tool: String,
+        /// Optional tool arguments as JSON (key=value or '{...}').
+        #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+}
+
+/// Arguments for the `mcp add` command.
+#[cfg(feature = "cli")]
+#[derive(clap::Args, Debug, PartialEq)]
+pub struct McpAddArgs {
+    /// Unique name for the server (used as the map key in settings.json).
+    pub name: String,
+
+    /// For stdio transport: path to the executable.
+    /// For http/sse transport: the endpoint URL.
+    #[arg(short, long = "command", alias = "url")]
+    pub command_or_url: String,
+
+    /// Extra arguments passed to the server executable (stdio only).
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub args: Vec<String>,
+
+    /// Transport type: stdio (default), http, or sse.
+    #[arg(short, long, default_value = "stdio")]
+    pub transport: String,
+
+    /// Environment variables in KEY=VALUE format (repeatable).
+    #[arg(short, long = "env")]
+    pub env_pairs: Vec<String>,
+
+    /// HTTP headers in "Key: Value" format (repeatable, http/sse only).
+    #[arg(short = 'H', long = "header")]
+    pub headers: Vec<String>,
+
+    /// Connection timeout in milliseconds.
+    #[arg(long, default_value_t = 30_000)]
+    pub timeout: u64,
+
+    /// Trust this server, bypass all tool-call confirmation prompts.
+    #[arg(long, default_value_t = false)]
+    pub trust: bool,
+
+    /// Human-readable description shown in `mcp list` and `mcp inspect`.
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Comma-separated list of tool names to expose (allowlist).
+    #[arg(long = "include-tools")]
+    pub include_tools: Vec<String>,
+
+    /// Comma-separated list of tool names to hide (blocklist).
+    #[arg(long = "exclude-tools")]
+    pub exclude_tools: Vec<String>,
 }
 
 // Copyright 2026 Mahmoud Harmouch.
