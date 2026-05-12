@@ -1897,71 +1897,16 @@ pub async fn run_generic_agent_loop(
             continue;
         }
 
-        if input.eq_ignore_ascii_case("/sessions") {
-            match session_mgr.list() {
-                Ok(entries) if !entries.is_empty() => {
-                    print_section("📁 Recent Sessions");
-                    for (i, entry) in entries.iter().enumerate() {
-                        info!(
-                            "  {} {} {} {}",
-                            format!("{}.", i + 1).bright_cyan(),
-                            entry.title.white().bold(),
-                            format!("({}/{})", entry.completed_count, entry.task_count)
-                                .bright_green(),
-                            entry
-                                .updated_at
-                                .format("%Y-%m-%d %H:%M")
-                                .to_string()
-                                .bright_black()
-                        );
-                        info!("     {} {}", "↳".bright_black(), entry.id.bright_black());
-                    }
-                    info!("");
-                    print!("> Enter number to resume (or press Enter to skip): ");
-                    io::stdout().flush()?;
-
-                    let mut pick = String::new();
-                    io::stdin().lock().read_line(&mut pick)?;
-                    let pick = pick.trim();
-
-                    if let Some(entry) = pick.parse::<usize>().ok().and_then(|n| {
-                        if n >= 1 && n <= entries.len() {
-                            Some(&entries[n - 1])
-                        } else {
-                            None
-                        }
-                    }) {
-                        match session_mgr.load(&entry.id) {
-                            Ok(s) => {
-                                print_section("📂 Resumed Session");
-                                info!("  {} {}", "▸".bright_cyan(), s.title.white().bold());
-                                for msg in &s.messages {
-                                    info!(
-                                        "  {} {}",
-                                        format!("[{}]", msg.role).bright_magenta(),
-                                        msg.content
-                                            .chars()
-                                            .take(120)
-                                            .collect::<String>()
-                                            .bright_white()
-                                    );
-                                }
-                            }
-                            Err(e) => print_error(&format!("Failed to load session: {e}")),
-                        }
-                    }
-                }
-                Ok(_) => print_warning("No previous sessions found."),
-                Err(e) => print_error(&format!("Failed to list sessions: {e}")),
-            }
-            continue;
-        }
-
-        if input.starts_with('/') {
-            print_warning(&format!(
-                "Unknown command: `{}`. Type /help for available commands.",
-                input
-            ));
+        if input.starts_with('/')
+            && handle_slash_command(
+                &input,
+                &mut agent,
+                &session_mgr,
+                &workspace,
+                &mut active_session,
+            )
+            .await?
+        {
             continue;
         }
 
@@ -2210,6 +2155,243 @@ pub async fn run_generic_agent_loop(
     }
 
     Ok(())
+}
+
+/// Asynchronously handles the slash command provided by the user.
+///
+/// This function parses the input for various commands starting with a forward slash ('/')
+/// and executes the corresponding logic, such as listing sessions, managing MCP servers,
+/// or displaying help.
+pub async fn handle_slash_command(
+    input: &str,
+    _agent: &mut GenericAgent,
+    session_mgr: &SessionManager,
+    workspace: &str,
+    active_session: &mut Option<Session>,
+) -> Result<bool> {
+    if input.eq_ignore_ascii_case("/help") {
+        render_help_table();
+        return Ok(true);
+    }
+
+    if input.eq_ignore_ascii_case("/clear") {
+        print!("{}[2J{}[1;1H", 27 as char, 27 as char);
+        print_banner();
+        return Ok(true);
+    }
+
+    if input.eq_ignore_ascii_case("/workspace") {
+        print_section("📂 Current Workspace");
+        info!("  {} {}", "▸".bright_cyan(), workspace.white().bold());
+        return Ok(true);
+    }
+
+    if input.eq_ignore_ascii_case("/status") {
+        print_section("📊 Session Status");
+        if let Some(s) = active_session.as_ref() {
+            info!("  {}   {}", "Title:".bright_black(), s.title.white().bold());
+            info!(
+                "  {}      {}",
+                "ID:".bright_black(),
+                s.id.to_string().bright_black()
+            );
+            let task_count = s.tasks.len();
+            let completed_count = s
+                .tasks
+                .iter()
+                .filter(|t| t.status == SessionTaskStatus::Completed)
+                .count();
+            info!(
+                "  {}  {}",
+                "Progress:".bright_black(),
+                format!("{} / {} tasks completed", completed_count, task_count).bright_green()
+            );
+        } else {
+            print_warning("No active session. Start a project to see status.");
+        }
+        return Ok(true);
+    }
+
+    if input.eq_ignore_ascii_case("/sessions") {
+        match session_mgr.list() {
+            Ok(entries) if !entries.is_empty() => {
+                print_section("📁 Recent Sessions");
+                for (i, entry) in entries.iter().enumerate() {
+                    info!(
+                        "  {} {} {} {}",
+                        format!("{}.", i + 1).bright_cyan(),
+                        entry.title.white().bold(),
+                        format!("({}/{})", entry.completed_count, entry.task_count).bright_green(),
+                        entry
+                            .updated_at
+                            .format("%Y-%m-%d %H:%M")
+                            .to_string()
+                            .bright_black()
+                    );
+                    info!("     {} {}", "↳".bright_black(), entry.id.bright_black());
+                }
+                info!("");
+                print!("> Enter number to resume (or press Enter to skip): ");
+                io::stdout().flush()?;
+
+                let mut pick = String::new();
+                io::stdin().lock().read_line(&mut pick)?;
+                let pick = pick.trim();
+
+                if let Some(entry) = pick.parse::<usize>().ok().and_then(|n| {
+                    if n >= 1 && n <= entries.len() {
+                        Some(&entries[n - 1])
+                    } else {
+                        None
+                    }
+                }) {
+                    match session_mgr.load(&entry.id) {
+                        Ok(s) => {
+                            print_section("📂 Resumed Session");
+                            info!("  {} {}", "▸".bright_cyan(), s.title.white().bold());
+                            for msg in &s.messages {
+                                info!(
+                                    "  {} {}",
+                                    format!("[{}]", msg.role).bright_magenta(),
+                                    msg.content
+                                        .chars()
+                                        .take(120)
+                                        .collect::<String>()
+                                        .bright_white()
+                                );
+                            }
+                            *active_session = Some(s);
+                        }
+                        Err(e) => print_error(&format!("Failed to load session: {e}")),
+                    }
+                }
+            }
+            Ok(_) => print_warning("No previous sessions found."),
+            Err(e) => print_error(&format!("Failed to list sessions: {e}")),
+        }
+        return Ok(true);
+    }
+
+    if input.starts_with("/mcp") {
+        #[cfg(all(feature = "cli", feature = "mcp"))]
+        {
+            use crate::cli::autogpt::commands::mcp as mcp_cmd;
+            use crate::cli::settings::SettingsManager;
+            use crate::cli::tui::{render_mcp_help_entries, render_mcp_inspect, render_mcp_list};
+            use crate::mcp::client::McpClient;
+            use crate::mcp::types::McpServerInfo;
+
+            let parts: Vec<&str> = input.split(' ').collect();
+            match parts.as_slice() {
+                ["/mcp"] | ["/mcp", "list"] => {
+                    let mgr = SettingsManager::new();
+                    match mgr.load() {
+                        Ok(settings) => {
+                            let infos = tokio::task::spawn_blocking(move || {
+                                let mut handles: Vec<std::thread::JoinHandle<McpServerInfo>> =
+                                    Vec::new();
+                                for (name, config) in settings.mcp {
+                                    let mut config = config.clone();
+                                    if config.timeout_ms > 60000 {
+                                        config.timeout_ms = 60000;
+                                    }
+                                    let name_clone = name.clone();
+                                    handles.push(std::thread::spawn(move || {
+                                        let mut client = McpClient::new(name_clone);
+                                        let _ = client.connect(&config);
+                                        let desc = config.description.clone().unwrap_or_default();
+                                        client.to_server_info(&desc)
+                                    }));
+                                }
+                                handles
+                                    .into_iter()
+                                    .map(|h| h.join().unwrap())
+                                    .collect::<Vec<_>>()
+                            })
+                            .await
+                            .unwrap();
+                            render_mcp_list(&infos);
+                        }
+                        Err(e) => print_error(&format!("Failed to load settings: {e}")),
+                    }
+                }
+                ["/mcp", "inspect", name] => {
+                    let mgr = SettingsManager::new();
+                    match mgr.load() {
+                        Ok(settings) => {
+                            if let Some(config) = settings.mcp.get(*name) {
+                                let config = config.clone();
+                                let name_str = name.to_string();
+                                tokio::task::spawn_blocking(move || {
+                                    let mut config = config.clone();
+                                    if config.timeout_ms > 60000 {
+                                        config.timeout_ms = 60000;
+                                    }
+                                    let mut client = McpClient::new(name_str);
+                                    let _ = client.connect(&config);
+                                    let desc = config.description.clone().unwrap_or_default();
+                                    let info = client.to_server_info(&desc);
+                                    render_mcp_inspect(&info, &config);
+                                })
+                                .await
+                                .unwrap();
+                            } else {
+                                print_warning(&format!(
+                                    "MCP server '{}' not found. Run `/mcp list` to see all.",
+                                    name
+                                ));
+                            }
+                        }
+                        Err(e) => print_error(&format!("Failed to load settings: {e}")),
+                    }
+                }
+                ["/mcp", "remove", name] => {
+                    let mgr = SettingsManager::new();
+                    match mgr.remove_mcp_server(name) {
+                        Ok((_, true)) => print_success(&format!("MCP server '{}' removed.", name)),
+                        Ok((_, false)) => {
+                            print_warning(&format!("MCP server '{}' was not registered.", name))
+                        }
+                        Err(e) => print_error(&format!("Failed to remove server: {e}")),
+                    }
+                }
+                ["/mcp", "call", server, tool, ..] => {
+                    let server_str = server.to_string();
+                    let tool_str = tool.to_string();
+                    let args = parts[4..].iter().map(|s| s.to_string()).collect();
+                    if let Err(e) = tokio::task::spawn_blocking(move || {
+                        mcp_cmd::cmd_mcp_call(&server_str, &tool_str, args)
+                    })
+                    .await
+                    .unwrap()
+                    {
+                        print_error(&format!("Failed to call tool: {e}"));
+                    }
+                }
+                ["/mcp", "help"] => {
+                    render_mcp_help_entries();
+                }
+                _ => {
+                    render_mcp_help_entries();
+                }
+            }
+        }
+        #[cfg(not(any(feature = "cli", feature = "mcp")))]
+        {
+            print_warning("MCP support requires the `mcp` or `cli` feature.");
+        }
+        return Ok(true);
+    }
+
+    if input.starts_with('/') {
+        print_warning(&format!(
+            "Unknown command: `{}`. Type /help for available commands.",
+            input
+        ));
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 // Copyright 2026 Mahmoud Harmouch.

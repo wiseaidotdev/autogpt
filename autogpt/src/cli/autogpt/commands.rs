@@ -6,6 +6,8 @@
 // except according to those terms.
 
 pub mod build;
+#[cfg(feature = "cli")]
+pub mod mcp;
 pub mod new;
 pub mod run;
 pub mod test;

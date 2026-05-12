@@ -30,8 +30,45 @@ use anyhow::Result;
 ///
 /// This flexible design allows `autogpt` to be deployed in a distributed multi-agent environment
 /// or as a single self-contained agent.
+fn load_dotenv() {
+    let mut paths = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join(".env"));
+    }
+    #[cfg(feature = "mcp")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            paths.push(home.join(".env"));
+            paths.push(home.join(".autogpt").join(".env"));
+        }
+    }
+
+    for path in paths {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(&path)
+        {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some((k, v)) = line.split_once('=') {
+                    let k = k.trim();
+                    let v = v.trim().trim_matches('"').trim_matches('\'');
+                    if !k.is_empty() && std::env::var(k).is_err() {
+                        unsafe {
+                            std::env::set_var(k, v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    load_dotenv();
     #[cfg(feature = "cli")]
     {
         #[allow(unused_imports)]
@@ -558,24 +595,26 @@ async fn main() -> Result<()> {
             let language = "python";
 
             #[cfg(all(feature = "gpt", feature = "git"))]
-            let mut _git_agent = GitGPT::default();
+            let mut _git_agent: Option<GitGPT> = None;
             #[cfg(feature = "gpt")]
             let mut _optimizer_gpt = OptimizerGPT::default();
 
             #[cfg(feature = "gpt")]
-            if !matches!(
-                command,
+            let is_non_agentic = match command {
                 Commands::Test
-                    | Commands::Run { feature: _ }
-                    | Commands::Build { out: _ }
-                    | Commands::New {
-                        name: _,
-                        feature: _
-                    }
-            ) {
+                | Commands::Run { .. }
+                | Commands::Build { .. }
+                | Commands::New { .. } => true,
+                #[cfg(all(feature = "cli", feature = "mcp"))]
+                Commands::Mcp { .. } => true,
+                _ => false,
+            };
+
+            #[cfg(feature = "gpt")]
+            if !is_non_agentic {
                 #[cfg(all(feature = "gpt", feature = "git"))]
                 {
-                    _git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
+                    _git_agent = Some(GitGPT::new("GitGPT", "Commit all changes").await);
                 }
                 let behavior =
                     "Expertise lies in modularizing monolithic source code into clean components";
@@ -1245,6 +1284,48 @@ async fn main() -> Result<()> {
                 Commands::Build { out } => build::handle_build(out)?,
                 Commands::Run { feature } => run::handle_run(feature.unwrap_or_default())?,
                 Commands::Test => test::handle_test()?,
+                #[cfg(all(feature = "cli", feature = "mcp"))]
+                Commands::Mcp { subcommand } => {
+                    use autogpt::cli::autogpt::McpSubcommand;
+                    use autogpt::cli::autogpt::commands::mcp as mcp_cmd;
+                    match subcommand {
+                        McpSubcommand::Add(args) => {
+                            tokio::task::spawn_blocking(move || {
+                                mcp_cmd::cmd_mcp_add(
+                                    &args.name,
+                                    &args.command_or_url,
+                                    args.args,
+                                    &args.transport,
+                                    args.env_pairs,
+                                    args.headers,
+                                    args.timeout,
+                                    args.trust,
+                                    args.description,
+                                    args.include_tools,
+                                    args.exclude_tools,
+                                )
+                            })
+                            .await??;
+                        }
+                        McpSubcommand::List => {
+                            tokio::task::spawn_blocking(mcp_cmd::cmd_mcp_list).await??;
+                        }
+                        McpSubcommand::Remove { name } => {
+                            tokio::task::spawn_blocking(move || mcp_cmd::cmd_mcp_remove(&name))
+                                .await??;
+                        }
+                        McpSubcommand::Inspect { name } => {
+                            tokio::task::spawn_blocking(move || mcp_cmd::cmd_mcp_inspect(&name))
+                                .await??;
+                        }
+                        McpSubcommand::Call { server, tool, args } => {
+                            tokio::task::spawn_blocking(move || {
+                                mcp_cmd::cmd_mcp_call(&server, &tool, args)
+                            })
+                            .await??;
+                        }
+                    }
+                }
             };
         }
     }

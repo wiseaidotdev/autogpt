@@ -225,6 +225,20 @@ pub trait Agent: Debug {
 
     /// Mutable access to context manager
     fn context_mut(&mut self) -> &mut ContextManager;
+
+    /// Returns the MCP server configurations registered on this agent.
+    #[cfg(feature = "mcp")]
+    fn mcp_servers(&self) -> &[crate::mcp::settings::McpServerConfig] {
+        &[]
+    }
+
+    #[cfg(feature = "mcp")]
+    fn mcp_servers_mut(&mut self) -> &mut Vec<crate::mcp::settings::McpServerConfig> {
+        unimplemented!(
+            "mcp_servers_mut() must be implemented on types that use MCP servers. \
+             Enable the `mcp` feature and override this method."
+        )
+    }
 }
 
 // Copyright 2026 Mahmoud Harmouch.

@@ -38,6 +38,9 @@ pub mod collaboration;
 #[cfg(feature = "cli")]
 pub mod cli;
 
+#[cfg(feature = "mcp")]
+pub mod mcp;
+
 #[cfg(all(feature = "cli", feature = "net", feature = "gpt"))]
 pub mod orchestrator;
 

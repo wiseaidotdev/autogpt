@@ -22,6 +22,10 @@ use termimad::crossterm::{
 pub const SLASH_COMMANDS: &[&str] = &[
     "/clear",
     "/help",
+    "/mcp",
+    "/mcp inspect",
+    "/mcp list",
+    "/mcp remove",
     "/models",
     "/provider",
     "/sessions",

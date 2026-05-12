@@ -53,21 +53,24 @@
       });
     });
 
-    const currentUrl = window.location.href
-      .split("#")[0]
+    const currentPath = window.location.pathname
       .replace(/\/$/, "")
       .replace(/\.html$/, "");
+
+    let matched = false;
     document.querySelectorAll(".sidebar a").forEach(function (link) {
-      const linkUrl = link.href
-        .split("#")[0]
-        .replace(/\/$/, "")
-        .replace(/\.html$/, "");
-      if (linkUrl === currentUrl) {
-        document
-          .querySelectorAll(".chapter li.chapter-item.active")
-          .forEach((li) => li.classList.remove("active"));
-        link.parentElement.classList.add("active");
-      }
+      try {
+        const linkPath = new URL(link.href).pathname
+          .replace(/\/$/, "")
+          .replace(/\.html$/, "");
+        if (linkPath === currentPath) {
+          matched = true;
+          document
+            .querySelectorAll(".chapter li.chapter-item.active")
+            .forEach((li) => li.classList.remove("active"));
+          link.parentElement.classList.add("active");
+        }
+      } catch (_) {}
     });
   });
 })();

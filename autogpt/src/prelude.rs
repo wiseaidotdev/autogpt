@@ -44,6 +44,14 @@ pub use {
     uuid::Uuid,
 };
 
+#[cfg(feature = "mcp")]
+pub use {
+    crate::mcp::client::McpClient,
+    crate::mcp::manager::McpManager,
+    crate::mcp::settings::{McpOAuthConfig, McpServerConfig, McpTransport},
+    crate::mcp::types::{McpServerInfo, McpServerStatus, McpTool, McpToolParam, McpToolResult},
+};
+
 #[cfg(feature = "net")]
 pub use {
     crate::collaboration::Collaborator, iac_rs::prelude::Message as IacMessage, iac_rs::prelude::*,

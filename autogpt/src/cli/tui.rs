@@ -160,6 +160,8 @@ pub fn render_help_table() {
     }
 
     info!("{}", "─".repeat(BOX_WIDTH).bright_black());
+    #[cfg(feature = "cli")]
+    render_mcp_help_entries();
     info!("");
 }
 
@@ -306,6 +308,157 @@ pub fn print_status_bar(cwd: &str, model: &str, provider: &str) {
         model.bright_magenta(),
         provider.bright_black()
     );
+}
+
+/// Renders a summary table of all registered MCP servers.
+#[cfg(all(feature = "cli", feature = "mcp"))]
+pub fn render_mcp_list(infos: &[crate::mcp::types::McpServerInfo]) {
+    use crate::mcp::types::McpServerStatus;
+    print_section("MCP Servers");
+    if infos.is_empty() {
+        print_warning("No MCP servers configured. Use `autogpt mcp add` or `/mcp add`.");
+        return;
+    }
+    let col_name = 20usize;
+    let col_status = 14usize;
+    let col_tools = 8usize;
+    info!(
+        "  {:<col_name$}  {:<col_status$}  {:<col_tools$}  Description",
+        "Name".bold(),
+        "Status".bold(),
+        "Tools".bold(),
+    );
+    info!("  {}", "─".repeat(BOX_WIDTH - 2));
+    for info in infos {
+        let status_str = match info.status {
+            McpServerStatus::Connected => "● connected".bright_green().bold().to_string(),
+            McpServerStatus::Connecting => "⟳ connecting".bright_yellow().to_string(),
+            McpServerStatus::Disconnected => "○ offline".bright_red().to_string(),
+        };
+        let tool_count = info.tools.len().to_string();
+        let desc = info.description.chars().take(40).collect::<String>();
+        info!(
+            "  {:<col_name$}  {:<col_status$}  {:<col_tools$}  {}",
+            info.name.bright_magenta().bold(),
+            status_str,
+            tool_count.bright_cyan(),
+            desc.bright_black(),
+        );
+        if let Some(ref err) = info.error {
+            info!(
+                "    {}  {}",
+                "⚠".bright_yellow(),
+                err.to_string().bright_red()
+            );
+        }
+    }
+    info!("");
+}
+
+/// Renders detailed information about a single MCP server, including its tools.
+#[cfg(all(feature = "cli", feature = "mcp"))]
+pub fn render_mcp_inspect(
+    info: &crate::mcp::types::McpServerInfo,
+    config: &crate::mcp::settings::McpServerConfig,
+) {
+    print_section(&format!("MCP Server: {}", info.name));
+    info!(
+        "  {}  {}",
+        "Transport:".bright_black(),
+        config.transport.to_string().bright_cyan()
+    );
+    info!(
+        "  {}  {}",
+        "Connection:".bright_black(),
+        config.connection_display().bright_white()
+    );
+    info!(
+        "  {}  {}",
+        "Status:   ".bright_black(),
+        info.status.to_string().bright_cyan()
+    );
+    if let Some(ref desc) = config.description {
+        info!(
+            "  {}  {}",
+            "Description:".bright_black(),
+            desc.to_string().bright_white()
+        );
+    }
+    info!(
+        "  {}  {}",
+        "Trust:    ".bright_black(),
+        if config.trust {
+            "yes".bright_green()
+        } else {
+            "no".bright_black()
+        }
+    );
+    if config.timeout_ms != 500_000 {
+        info!(
+            "  {}  {}ms",
+            "Timeout:  ".bright_black(),
+            config.timeout_ms.to_string().bright_cyan()
+        );
+    }
+    if let Some(ref err) = info.error {
+        print_error(&format!("Last connection error: {err}"));
+    }
+
+    if info.tools.is_empty() {
+        print_warning("No tools discovered (server may be offline or has no tools).");
+    } else {
+        print_section(&format!("Available Tools ({}):", info.tools.len()));
+        for tool in &info.tools {
+            info!(
+                "  {}  {}",
+                tool.name.bright_magenta().bold(),
+                tool.description.bright_black()
+            );
+            for (param_name, param) in &tool.params {
+                let req = if param.required {
+                    "*".bright_red().bold().to_string()
+                } else {
+                    " ".to_string()
+                };
+                info!(
+                    "    {} {}: {} - {}",
+                    req,
+                    param_name.bright_cyan(),
+                    param.param_type.bright_black(),
+                    param.description.bright_black(),
+                );
+            }
+        }
+    }
+    info!("");
+}
+
+/// Appends MCP entries to the help table rendered by `/help`.
+#[cfg(feature = "cli")]
+pub fn render_mcp_help_entries() {
+    info!("");
+    info!("{}", "MCP Commands".bold().bright_magenta());
+    info!(
+        "  {}  {}",
+        "/mcp list".bright_cyan().bold(),
+        "Show all configured MCP servers and their status".bright_black()
+    );
+    info!(
+        "  {}  {}",
+        "/mcp inspect <name>".bright_cyan().bold(),
+        "Inspect a server and list its tools".bright_black()
+    );
+    info!(
+        "  {}  {}",
+        "/mcp remove <name>".bright_cyan().bold(),
+        "Remove a server registration".bright_black()
+    );
+    info!(
+        "  {}  {}",
+        "/mcp call <srv> <tool> [args]".bright_cyan().bold(),
+        "Call an MCP tool with JSON args or key=val pairs".bright_black()
+    );
+    info!("");
 }
 
 // Copyright 2026 Mahmoud Harmouch.

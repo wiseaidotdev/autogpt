@@ -171,6 +171,6 @@ When activated by ManagerGPT, OptimizerGPT will:
 - Apply standard conventions and folder structures depending on the tech stack (React, FastAPI, etc.).
 - Refactor duplicated or redundant code into reusable functions or components.
 
-With Autogpt's team of specialized agents working together, your project is in capable hands. Simply provide a simple project goal, and let Autogpt handle the rest!
+With Autogpt's team of specialized agents working together, your project is in capable hands. All agents support the **Model Context Protocol (MCP)**, allowing you to extend their capabilities with thousands of external tools. Simply provide a simple project goal, and let Autogpt handle the rest!
 
 ---

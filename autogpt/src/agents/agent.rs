@@ -12,6 +12,8 @@ use crate::common::utils::{
     Capability, ContextManager, Knowledge, Message, Persona, Planner, Reflection, Status, Task,
     TaskScheduler, Tool, default_eval_fn,
 };
+#[cfg(feature = "mcp")]
+use crate::mcp::settings::McpServerConfig;
 use crate::traits::agent::Agent;
 use derivative::Derivative;
 use std::borrow::Cow;
@@ -129,6 +131,13 @@ pub struct AgentGPT {
     /// Round-robin index used to evenly distribute workload among peers.
     #[cfg(feature = "net")]
     pub rr_idx: usize,
+
+    /// MCP server configurations attached to this agent.
+    ///
+    /// When populated the agent can connect to these servers and use their tools
+    /// as part of its tool-use loop.  Each entry is keyed by the server name.
+    #[cfg(feature = "mcp")]
+    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 impl Default for AgentGPT {
@@ -177,6 +186,8 @@ impl Default for AgentGPT {
             cap_index: HashMap::new(),
             #[cfg(feature = "net")]
             rr_idx: 0,
+            #[cfg(feature = "mcp")]
+            mcp_servers: vec![],
         }
     }
 }
@@ -185,6 +196,38 @@ impl AgentGPT {
     /// Adds a message to the memory of the agent.
     pub fn add_message(&mut self, message: Message) {
         self.memory.push(message);
+    }
+
+    /// Attaches an MCP server configuration to this agent (builder-style).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use autogpt::agents::agent::AgentGPT;
+    /// use autogpt::cli::settings::{McpServerConfig, McpTransport};
+    /// use std::collections::HashMap;
+    ///
+    /// let mut agent = AgentGPT::new_borrowed("MyAgent", "Do research");
+    /// agent.with_mcp_server(McpServerConfig {
+    ///     name: "github".to_string(), transport: McpTransport::Stdio,
+    ///     command: Some("docker".to_string()),
+    ///     args: vec!["run".into(), "-i".into(), "ghcr.io/github/github-mcp-server".into()],
+    ///     url: None, http_url: None, headers: HashMap::new(), env: HashMap::new(),
+    ///     cwd: None, timeout_ms: 500_000, trust: false,
+    ///     include_tools: vec![], exclude_tools: vec![],
+    ///     description: None, oauth: None,
+    /// });
+    /// ```
+    #[cfg(feature = "mcp")]
+    pub fn with_mcp_server(&mut self, config: McpServerConfig) -> &mut Self {
+        self.mcp_servers.push(config);
+        self
+    }
+
+    /// Returns the MCP server configurations attached to this agent.
+    #[cfg(feature = "mcp")]
+    pub fn mcp_servers(&self) -> &[McpServerConfig] {
+        &self.mcp_servers
     }
 
     /// Creates a new instance of `AgentGPT` with owned strings.
@@ -257,6 +300,8 @@ impl AgentGPT {
             cap_index: HashMap::new(),
             #[cfg(feature = "net")]
             rr_idx: 0,
+            #[cfg(feature = "mcp")]
+            mcp_servers: vec![],
         }
     }
 
@@ -330,6 +375,8 @@ impl AgentGPT {
             cap_index: HashMap::new(),
             #[cfg(feature = "net")]
             rr_idx: 0,
+            #[cfg(feature = "mcp")]
+            mcp_servers: vec![],
         }
     }
 
@@ -461,6 +508,8 @@ impl Agent for AgentGPT {
             cap_index: HashMap::new(),
             #[cfg(feature = "net")]
             rr_idx: 0,
+            #[cfg(feature = "mcp")]
+            mcp_servers: vec![],
         }
     }
 
@@ -553,6 +602,16 @@ impl Agent for AgentGPT {
 
     fn context_mut(&mut self) -> &mut ContextManager {
         &mut self.context
+    }
+
+    #[cfg(feature = "mcp")]
+    fn mcp_servers(&self) -> &[crate::mcp::settings::McpServerConfig] {
+        &self.mcp_servers
+    }
+
+    #[cfg(feature = "mcp")]
+    fn mcp_servers_mut(&mut self) -> &mut Vec<crate::mcp::settings::McpServerConfig> {
+        &mut self.mcp_servers
     }
 }
 

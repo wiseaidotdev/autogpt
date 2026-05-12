@@ -102,13 +102,16 @@ impl fmt::Debug for GitGPT {
 
 impl Default for GitGPT {
     fn default() -> Self {
-        let temp_path = "/tmp/gitgpt";
+        let temp_path = std::env::temp_dir()
+            .join(format!("gitgpt-{}", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .into_owned();
 
         let repo =
-            Repository::init(temp_path).expect("Failed to initialize default Git repository");
+            Repository::init(&temp_path).expect("Failed to initialize default Git repository");
 
         GitGPT {
-            workspace: Cow::Borrowed(temp_path),
+            workspace: Cow::Owned(temp_path.clone()),
             agent: AgentGPT::default(),
             repo: Mutex::new(repo),
             repo_path: temp_path.to_string(),
