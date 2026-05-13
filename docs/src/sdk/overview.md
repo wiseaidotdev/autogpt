@@ -6,7 +6,7 @@ The AutoGPT SDK lets you embed the full agent framework as a library in your own
 
 ```toml
 [dependencies]
-autogpt = { version = "0.4.0", features = ["gem", "gpt"] }
+autogpt = { version = "0.4.1", features = ["gem", "gpt"] }
 tokio   = { version = "1",   features = ["full"] }
 ```
 
