@@ -6,6 +6,8 @@
 // except according to those terms.
 
 use autogpt::agents::manager::ManagerGPT;
+use autogpt::prelude::Task;
+use autogpt::traits::functions::Executor;
 use tracing::debug;
 use tracing_subscriber::{filter, fmt, prelude::*, reload};
 
@@ -25,7 +27,11 @@ async fn test_manager_gpt() {
 
     let mut manager = ManagerGPT::new(persona, behavior, request, language);
 
-    let _ = manager.execute(true, false, 3).await;
+    let mut task = Task {
+        description: request.into(),
+        ..Default::default()
+    };
+    let _ = manager.execute(&mut task, true, false, 3).await;
 
     debug!("{:?}", manager);
 }

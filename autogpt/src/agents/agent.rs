@@ -439,6 +439,22 @@ impl AgentGPT {
             peer_addresses: self.peer_addresses.clone(),
         }
     }
+
+    pub fn truncate_memory(&mut self, max_chars: usize) {
+        let mut current_chars = 0;
+        let mut keep_count = 0;
+        for msg in self.memory.iter().rev() {
+            current_chars += msg.content.len();
+            if current_chars > max_chars {
+                break;
+            }
+            keep_count += 1;
+        }
+        let len = self.memory.len();
+        if keep_count < len {
+            self.memory.drain(0..len - keep_count);
+        }
+    }
 }
 
 impl Agent for AgentGPT {

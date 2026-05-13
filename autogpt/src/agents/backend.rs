@@ -60,14 +60,14 @@ use crate::common::utils::{
 #[cfg(feature = "hf")]
 use crate::prelude::hf_model_from_str;
 use crate::prompts::backend::{
-    API_ENDPOINTS_PROMPT, FIX_CODE_PROMPT, IMPROVED_WEBSERVER_CODE_PROMPT, WEBSERVER_CODE_PROMPT,
+    API_ENDPOINTS_PROMPT, ENV_SETUP_PROMPT, FIX_CODE_PROMPT, IMPROVED_WEBSERVER_CODE_PROMPT,
+    WEBSERVER_CODE_PROMPT,
 };
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Executor, Functions};
 use auto_derive::Auto;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
-// use std::thread::sleep;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
@@ -116,6 +116,8 @@ pub struct BackendGPT {
     bugs: Option<Cow<'static, str>>,
     /// Represents the programming language used for backend development.
     language: &'static str,
+    /// Represents the path to the primary source entry file, relative to `workspace`.
+    entry_point: String,
     /// Represents the number of bugs found in the codebase.
     nb_bugs: u64,
 }
@@ -125,8 +127,8 @@ impl BackendGPT {
     ///
     /// # Arguments
     ///
-    /// * `behavior` - behavior description for `BackendGPT`.
-    /// * `position` - Position description for `BackendGPT`.
+    /// * `persona` - The role or identity of the agent.
+    /// * `behavior` - The goal or mission for the agent.
     /// * `language` - Programming language used for backend development.
     ///
     /// # Returns
@@ -159,106 +161,99 @@ impl BackendGPT {
 
         info!(
             "{}",
-            format!("[*] {persona:?}: 🛠️  Getting ready!")
+            format!("[*] {persona:?}: 🛠️  Getting ready ({language})!")
                 .bright_white()
                 .bold()
         );
 
-        match language {
-            "rust" => {
-                if !Path::new(&format!("{workspace}/Cargo.toml")).exists() {
-                    let cargo_new = Command::new("cargo").arg("init").arg(&workspace).spawn();
-
-                    match cargo_new {
-                        Ok(_) => debug!("Cargo project initialized successfully."),
-                        Err(e) => error!("Error initializing Cargo project: {}", e),
-                    }
-                }
-
-                let template_path = format!("{workspace}/src/template.rs");
-                if !Path::new(&template_path).exists() {
-                    if let Err(e) = fs::write(&template_path, "").await {
-                        error!("Error creating file '{}': {}", template_path, e);
-                    } else {
-                        debug!("File '{}' created successfully.", template_path);
-                    }
-                }
-            }
-
-            "python" => {
-                let files = ["main.py", "template.py"];
-                for file in files.iter() {
-                    let full_path = format!("{workspace}/{file}");
-                    if !Path::new(&full_path).exists() {
-                        if let Err(e) = fs::write(&full_path, "").await {
-                            error!("Error creating file '{}': {}", full_path, e);
-                        } else {
-                            debug!("File '{}' created successfully.", full_path);
-                        }
-                    }
-                }
-            }
-
-            "javascript" => {
-                if !Path::new(&format!("{workspace}/package.json")).exists() {
-                    let npx_install = Command::new("npx")
-                        .arg("create-react-app")
-                        .arg(&workspace)
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
-                        .spawn();
-
-                    match npx_install {
-                        Ok(mut child) => match child.wait().await {
-                            Ok(status) => {
-                                if status.success() {
-                                    debug!("React JS project initialized successfully.");
-                                } else {
-                                    error!("Failed to initialize React JS project.");
-                                }
-                            }
-                            Err(e) => {
-                                error!("Error waiting for process: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            error!("Error initializing React JS project: {}", e);
-                        }
-                    }
-                }
-
-                let template_path = format!("{workspace}/src/template.js");
-                if !Path::new(&template_path).exists() {
-                    if let Err(e) = fs::write(&template_path, "").await {
-                        error!("Error creating file '{}': {}", template_path, e);
-                    } else {
-                        debug!("File '{}' created successfully.", template_path);
-                    }
-                }
-            }
-
-            _ => panic!("Unsupported language '{language}'. Consider opening an issue/PR.",),
-        }
-
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
-        agent.id = agent.persona().to_string().into();
-
         let client = ClientType::from_env();
-
         let req_client: ReqClient = ReqClient::builder()
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
 
-        Self {
+        let mut backend = Self {
             workspace: workspace.into(),
-            agent,
+            agent: AgentGPT::new_borrowed(persona, behavior),
             client,
             req_client,
             bugs: None,
             language,
+            entry_point: String::new(),
             nb_bugs: 0,
+        };
+        backend.agent.id = backend.agent.persona().to_string().into();
+
+        let current_workspace = backend.workspace.to_string();
+        backend.entry_point = backend
+            .setup_environment(&current_workspace)
+            .await
+            .unwrap_or_else(|e| {
+                error!("Environment setup failed: {e}");
+                format!("{current_workspace}/main")
+            });
+
+        backend
+    }
+
+    /// Scaffolds the project directory for the requested language and returns the
+    /// path to the primary source entry file.
+    ///
+    /// Supports rust, python, javascript, typescript, go, java, ruby, and php out
+    /// of the box. Unknown languages get a plain directory with a generic `main` file.
+    async fn setup_environment(&mut self, workspace: &str) -> Result<String> {
+        let setup_prompt = ENV_SETUP_PROMPT.replace("{LANGUAGE}", self.language);
+        let response = self.generate(&setup_prompt).await?;
+        let clean_json = strip_code_blocks(&response);
+
+        let setup: serde_json::Value = serde_json::from_str(&clean_json)
+            .map_err(|e| anyhow!("Failed to parse setup JSON: {e} | Raw: {clean_json}"))?;
+
+        let commands = setup["commands"]
+            .as_array()
+            .ok_or_else(|| anyhow!("Missing 'commands' array in setup JSON"))?;
+
+        let entry_relative = setup["entry_point"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing 'entry_point' string in setup JSON"))?;
+
+        let mut current_dir = PathBuf::from(workspace);
+        for raw_cmd in commands {
+            if let Some(cmd_str) = raw_cmd.as_str() {
+                let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+                if let Some((&executable, args)) = parts.split_first() {
+                    if executable == "cd" {
+                        if let Some(new_path) = args.first() {
+                            current_dir = current_dir.join(new_path);
+                        }
+                        continue;
+                    }
+                    match Command::new(executable)
+                        .args(args)
+                        .current_dir(&current_dir)
+                        .status()
+                        .await
+                    {
+                        Ok(s) if s.success() => debug!("setup: `{}` ok", cmd_str),
+                        Ok(s) => warn!("setup: `{}` exited {}", cmd_str, s),
+                        Err(e) => warn!("setup: `{}` failed: {}", cmd_str, e),
+                    }
+                }
+            }
         }
+
+        let entry = format!("{workspace}/{entry_relative}");
+
+        if !Path::new(&entry).exists() {
+            if let Some(parent) = Path::new(&entry).parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            fs::write(&entry, "")
+                .await
+                .map_err(|e| anyhow!("Could not create entry file {entry}: {e}"))?;
+        }
+
+        Ok(entry)
     }
     pub async fn build_request(
         &mut self,
@@ -364,16 +359,8 @@ impl BackendGPT {
     /// - Writes the generated backend code to the appropriate file based on language.
     /// - Updates the task's backend code and the agent's status to `Completed`.
     pub async fn generate_backend_code(&mut self, task: &mut Task) -> Result<String> {
-        let path = self.workspace.clone();
-
-        let backend_path = match self.language {
-            "rust" => format!("{}/{}", path, "src/main.rs"),
-            "python" => format!("{}/{}", path, "main.py"),
-            "javascript" => format!("{}/{}", path, "src/index.js"),
-            _ => panic!("Unsupported language, consider opening an Issue/PR"),
-        };
-
-        let template = fs::read_to_string(&backend_path).await?;
+        let backend_path = self.entry_point.clone();
+        let template = fs::read_to_string(&backend_path).await.unwrap_or_default();
 
         let prompt = format!(
             "{}\n\nCode Template: {}\nProject Description: {}",
@@ -384,17 +371,13 @@ impl BackendGPT {
 
         let code = match output {
             GenerationOutput::Text(code) => code,
-            _ => {
-                return Err(anyhow!("Expected text output for backend code generation"));
-            }
+            _ => return Err(anyhow!("Expected text output for backend code generation")),
         };
 
         fs::write(&backend_path, &code).await?;
         task.backend_code = Some(code.clone().into());
-
         self.agent.update(Status::Completed);
         debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
-
         Ok(code)
     }
 
@@ -478,28 +461,16 @@ impl BackendGPT {
         }
 
         let cleaned_code = strip_code_blocks(&response_text);
-
-        let backend_path = match self.language {
-            "rust" => format!("{}/src/main.rs", self.workspace),
-            "python" => format!("{}/main.py", self.workspace),
-            "javascript" => format!("{}/src/index.js", self.workspace),
-            _ => return Err(anyhow!("Unsupported language")),
-        };
-
+        let backend_path = self.entry_point.clone();
         debug!(
             "[*] {:?}: Writing to {}",
             self.agent.persona(),
             backend_path
         );
-
         fs::write(&backend_path, &cleaned_code).await?;
-
         task.backend_code = Some(cleaned_code.clone().into());
-
         self.agent.update(Status::Completed);
-
         debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
-
         Ok(cleaned_code)
     }
 
@@ -582,28 +553,16 @@ impl BackendGPT {
         }
 
         let cleaned_code = strip_code_blocks(&response_text);
-
-        let workspace = &self.workspace;
-        let backend_path = match self.language {
-            "rust" => format!("{workspace}/src/main.rs"),
-            "python" => format!("{workspace}/main.py"),
-            "javascript" => format!("{workspace}/src/index.js"),
-            _ => return Err(anyhow!("Unsupported language")),
-        };
-
+        let backend_path = self.entry_point.clone();
         debug!(
             "[*] {:?}: Writing to {}",
             self.agent.persona(),
             backend_path
         );
-
         fs::write(&backend_path, &cleaned_code).await?;
-
         task.backend_code = Some(cleaned_code.clone().into());
-
         self.agent.update(Status::Completed);
         debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
-
         Ok(cleaned_code)
     }
 
@@ -632,17 +591,10 @@ impl BackendGPT {
             self.agent.memory = self.get_ltm().await?;
         }
 
-        let path = self.workspace.clone();
-        let full_path = match self.language {
-            "rust" => format!("{path}/src/main.rs"),
-            "python" => format!("{path}/main.py"),
-            "javascript" => format!("{path}/src/index.js"),
-            _ => return Err(anyhow!("Unsupported language")),
-        };
-
+        let full_path = self.entry_point.clone();
         debug!("[*] {:?}: Reading from {}", self.agent.persona(), full_path);
 
-        let backend_code = fs::read_to_string(full_path).await?;
+        let backend_code = fs::read_to_string(&full_path).await?;
         let request = format!(
             "{API_ENDPOINTS_PROMPT}\n\nHere is the backend code with all routes:{backend_code}"
         );
@@ -1016,11 +968,15 @@ impl BackendGPT {
     }
 
     async fn build_and_run_backend(&self, path: &str) -> Result<Option<Child>> {
-        match self.language {
-            "rust" => self.build_and_run_rust_backend(path).await,
-            "python" => self.build_and_run_python_backend(path).await,
-            "javascript" => self.build_and_run_js_backend(path).await,
-            _ => Ok(None),
+        let lang = self.language.to_ascii_lowercase();
+        if lang.contains("rust") {
+            self.build_and_run_rust_backend(path).await
+        } else if lang.contains("python") {
+            self.build_and_run_python_backend(path).await
+        } else if lang.contains("javascript") || lang.contains("typescript") {
+            self.build_and_run_js_backend(path).await
+        } else {
+            Ok(None)
         }
     }
 

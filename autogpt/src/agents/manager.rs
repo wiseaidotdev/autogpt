@@ -18,12 +18,20 @@ use crate::agents::frontend::FrontendGPT;
 #[cfg(feature = "git")]
 use crate::agents::git::GitGPT;
 use crate::agents::types::AgentType;
-use crate::common::utils::strip_code_blocks;
-use crate::common::utils::{ClientType, Message, Task};
+#[cfg(feature = "net")]
+use crate::collaboration::Collaborator;
+use crate::common::utils::{
+    Capability, ClientType, ContextManager, Knowledge, Message, Persona, Planner, Reflection,
+    Status, Task, TaskScheduler, Tool, strip_code_blocks,
+};
+#[cfg(feature = "hf")]
+use crate::prelude::hf_model_from_str;
 use crate::prompts::manager::{FRAMEWORK_MANAGER_PROMPT, LANGUAGE_MANAGER_PROMPT, MANAGER_PROMPT};
 use crate::traits::agent::Agent;
-use crate::traits::functions::{AsyncFunctions, Functions};
+use crate::traits::functions::{AsyncFunctions, Executor, Functions};
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
+use auto_derive::Auto;
 use colored::*;
 #[cfg(feature = "gem")]
 use gems::Client;
@@ -79,7 +87,7 @@ use x_ai::{
 use {cohere_rust::api::GenerateModel, cohere_rust::api::generate::GenerateRequest};
 
 /// Struct representing a ManagerGPT, responsible for managing different types of GPT agents.
-#[derive(Debug)]
+#[derive(Debug, Clone, Default, Auto)]
 #[allow(unused)]
 pub struct ManagerGPT {
     /// Represents the GPT agent associated with the manager.
@@ -211,327 +219,30 @@ impl ManagerGPT {
         ));
     }
 
-    /// Spawns default agents if the collection is empty.
+    /// Sends a prompt to the configured LLM and returns the full response text.
     ///
-    /// # Business Logic
+    /// # Arguments
     ///
-    /// - Adds default agents to the collection if it is empty.
+    /// * `prompt` - The user's prompt.
     ///
+    /// # Returns
+    ///
+    /// (`Result<String>`): The AI's response text.
     pub async fn execute_prompt(&mut self, prompt: String) -> Result<String, anyhow::Error> {
-        let provider = var("AI_PROVIDER").unwrap_or_else(|_| "gemini".to_string());
-        let response = match &mut self.client {
-            #[cfg(feature = "gem")]
-            ClientType::Gemini(gem_client) if provider == "gemini" => {
-                let parameters = ChatBuilder::default()
-                    .messages(vec![GemMessage::User {
-                        content: Content::Text(prompt),
-                        name: None,
-                    }])
-                    .build()?;
-                let result: Result<String, anyhow::Error> = gem_client
-                    .chat()
-                    .generate(parameters)
-                    .await
-                    .map_err(|e| anyhow!(e.to_string()));
-
-                match result {
-                    Ok(res) => strip_code_blocks(&res),
-                    Err(_err) => {
-                        let error_msg = "Failed to generate content via Gemini API.".to_string();
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("system"),
-                            content: Cow::Owned(error_msg.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("system"),
-                                    content: Cow::Owned(error_msg.clone()),
-                                })
-                                .await;
-                        }
-
-                        return Err(anyhow!(error_msg));
-                    }
-                }
-            }
-
-            #[cfg(feature = "oai")]
-            ClientType::OpenAI(oai_client) if provider == "openai" => {
-                let parameters = ChatCompletionParametersBuilder::default()
-                    .model(Gpt4Model::Gpt4O.to_string())
-                    .messages(vec![ChatMessage::User {
-                        content: ChatMessageContent::Text(prompt.clone()),
-                        name: None,
-                    }])
-                    .response_format(ChatCompletionResponseFormat::Text)
-                    .build()?;
-
-                let result = oai_client.chat().create(parameters).await;
-
-                match result {
-                    Ok(chat_response) => {
-                        let message = &chat_response.choices[0].message;
-
-                        let response_text = match message {
-                            ChatMessage::Assistant {
-                                content: Some(chat_content),
-                                ..
-                            } => chat_content.to_string(),
-                            ChatMessage::User { content, .. } => content.to_string(),
-                            ChatMessage::System { content, .. } => content.to_string(),
-                            ChatMessage::Developer { content, .. } => content.to_string(),
-                            ChatMessage::Tool { content, .. } => content.to_string(),
-                            _ => String::from(""),
-                        };
-
-                        strip_code_blocks(&response_text)
-                    }
-
-                    Err(_err) => {
-                        let error_msg = "Failed to generate content via OpenAI API.".to_string();
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("system"),
-                            content: Cow::Owned(error_msg.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("system"),
-                                    content: Cow::Owned(error_msg.clone()),
-                                })
-                                .await;
-                        }
-
-                        return Err(anyhow!(error_msg));
-                    }
-                }
-            }
-
-            #[cfg(feature = "cld")]
-            ClientType::Anthropic(client) if provider == "claude" => {
-                let body = CreateMessageParams::new(RequiredMessageParams {
-                    model: "claude-opus-4-6".to_string(),
-                    messages: vec![AnthMessage::new_text(Role::User, prompt.clone())],
-                    max_tokens: 1024,
-                });
-
-                match client.create_message(Some(&body)).await {
-                    Ok(chat_response) => {
-                        let response_text = chat_response
-                            .content
-                            .iter()
-                            .filter_map(|block| match block {
-                                ContentBlock::Text { text, .. } => Some(text),
-                                _ => None,
-                            })
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join("\n");
-
-                        strip_code_blocks(&response_text)
-                    }
-
-                    Err(_) => {
-                        let error_msg = "Failed to generate content via Claude API.".to_string();
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("system"),
-                            content: Cow::Owned(error_msg.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("system"),
-                                    content: Cow::Owned(error_msg.clone()),
-                                })
-                                .await;
-                        }
-
-                        return Err(anyhow!(error_msg));
-                    }
-                }
-            }
-            #[cfg(feature = "xai")]
-            ClientType::Xai(xai_client) => {
-                let messages = vec![XaiMessage::text("user", prompt.clone())];
-
-                let rb = ChatCompletionsRequestBuilder::new(
-                    xai_client.clone(),
-                    "grok-4".into(),
-                    messages,
-                )
-                .temperature(0.0)
-                .stream(false);
-
-                let req = rb.clone().build()?;
-                let resp = rb.create_chat_completion(req).await;
-
-                match resp {
-                    Ok(chat) => {
-                        let response_text = chat.choices[0].message.content.to_string();
-
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("assistant"),
-                            content: Cow::Owned(response_text.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("assistant"),
-                                    content: Cow::Owned(response_text.clone()),
-                                })
-                                .await;
-                        }
-
-                        #[cfg(debug_assertions)]
-                        debug!(
-                            "[*] {:?}: Got XAI Output: {:?}",
-                            self.agent.persona(),
-                            response_text
-                        );
-
-                        strip_code_blocks(&response_text)
-                    }
-
-                    Err(err) => {
-                        let err_msg = format!("Failed to generate content via XAI API: {err}");
-
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("assistant"),
-                            content: Cow::Owned(err_msg.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("assistant"),
-                                    content: Cow::Owned(err_msg.clone()),
-                                })
-                                .await;
-                        }
-
-                        return Err(anyhow!(err_msg));
-                    }
-                }
-            }
-
-            #[cfg(feature = "co")]
-            ClientType::Cohere(co_client) => {
-                let gen_request = GenerateRequest {
-                    prompt: &prompt,
-                    model: Some(GenerateModel::Custom("command-a-03-2025".to_string())),
-                    max_tokens: Some(2048),
-                    ..Default::default()
-                };
-
-                match co_client.generate(&gen_request).await {
-                    Ok(generations) => generations
-                        .iter()
-                        .map(|g| g.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join(""),
-                    Err(e) => {
-                        let err_msg = format!("Failed to generate content via Cohere API: {e:?}");
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("system"),
-                            content: Cow::Owned(err_msg.clone()),
-                        });
-                        return Err(anyhow!(err_msg));
-                    }
-                }
-            }
-
-            #[cfg(feature = "hf")]
-            ClientType::HuggingFace(hf_client) => {
-                let model_id = crate::common::utils::hf_model_from_str(&hf_client.model);
-                let result = hf_client.client.inference().create(&prompt, model_id).await;
-
-                match result {
-                    Ok(inference_res) => {
-                        let response_text = match inference_res {
-                            api_huggingface::components::inference_shared::InferenceResponse::Single(output) => {
-                                output.generated_text
-                            }
-                            api_huggingface::components::inference_shared::InferenceResponse::Batch(mut batch) => {
-                                batch.pop().map(|o| o.generated_text).unwrap_or_default()
-                            }
-                            _ => String::new(),
-                        };
-
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("assistant"),
-                            content: Cow::Owned(response_text.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("assistant"),
-                                    content: Cow::Owned(response_text.clone()),
-                                })
-                                .await;
-                        }
-
-                        #[cfg(debug_assertions)]
-                        debug!(
-                            "[*] {:?}: Got HF Output: {:?}",
-                            self.agent.persona(),
-                            response_text
-                        );
-
-                        strip_code_blocks(&response_text)
-                    }
-
-                    Err(err) => {
-                        let err_msg =
-                            format!("Failed to generate content via HuggingFace API: {err}");
-
-                        self.agent.add_message(Message {
-                            role: Cow::Borrowed("assistant"),
-                            content: Cow::Owned(err_msg.clone()),
-                        });
-
-                        #[cfg(feature = "mem")]
-                        {
-                            let _ = self
-                                .save_ltm(Message {
-                                    role: Cow::Borrowed("assistant"),
-                                    content: Cow::Owned(err_msg.clone()),
-                                })
-                                .await;
-                        }
-
-                        return Err(anyhow!(err_msg));
-                    }
-                }
-            }
-
-            #[allow(unreachable_patterns)]
-            _ => {
-                return Err(anyhow!(
-                    "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
-                ));
-            }
-        };
-
-        Ok(response)
+        let response = self.generate(&prompt).await?;
+        Ok(strip_code_blocks(&response))
     }
+}
 
+#[async_trait]
+impl Executor for ManagerGPT {
     /// Asynchronously executes the tasks described by the user request.
     ///
     /// # Arguments
     ///
+    /// * `task` - A mutable reference to the task to be executed.
     /// * `execute` - A boolean indicating whether to execute the tasks.
+    /// * `browse` - Whether to open a browser.
     /// * `max_tries` - Maximum number of attempts to execute tasks.
     ///
     /// # Returns
@@ -547,7 +258,13 @@ impl ManagerGPT {
     /// - Executes tasks described by the user request using the collection of agents managed by the manager.
     /// - Logs user request, system decisions, and assistant responses.
     /// - Manages retries and error handling during task execution.
-    pub async fn execute(&mut self, execute: bool, browse: bool, max_tries: u64) -> Result<()> {
+    async fn execute<'a>(
+        &'a mut self,
+        task: &'a mut Task,
+        execute: bool,
+        browse: bool,
+        max_tries: u64,
+    ) -> Result<()> {
         self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
@@ -721,57 +438,6 @@ impl ManagerGPT {
         );
 
         Ok(())
-    }
-    /// Saves a message to long-term memory for the agent.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The message to save, which contains the role and content.
-    ///
-    /// # Returns
-    ///
-    /// (`Result<()>`): Result indicating the success or failure of saving the message.
-    ///
-    /// # Business Logic
-    ///
-    /// - This method uses the `save_long_term_memory` util function to save the message into the agent's long-term memory.
-    /// - The message is embedded and stored using the agent's unique ID as the namespace.
-    /// - It handles the embedding and metadata for the message, ensuring it's stored correctly.
-    #[cfg(feature = "mem")]
-    async fn save_ltm(&mut self, message: Message) -> Result<()> {
-        save_long_term_memory(&mut self.client, self.agent.id.clone(), message).await
-    }
-
-    /// Retrieves all messages stored in the agent's long-term memory.
-    ///
-    /// # Returns
-    ///
-    /// (`Result<Vec<Message>>`): A result containing a vector of messages retrieved from the agent's long-term memory.
-    ///
-    /// # Business Logic
-    ///
-    /// - This method fetches the stored messages for the agent by interacting with the `load_long_term_memory` function.
-    /// - The function will return a list of messages that are indexed by the agent's unique ID.
-    /// - It handles the retrieval of the stored metadata and content for each message.
-    #[cfg(feature = "mem")]
-    async fn get_ltm(&self) -> Result<Vec<Message>> {
-        load_long_term_memory(self.agent.id.clone()).await
-    }
-
-    /// Retrieves the concatenated context of all messages in the agent's long-term memory.
-    ///
-    /// # Returns
-    ///
-    /// (`String`): A string containing the concatenated role and content of all messages stored in the agent's long-term memory.
-    ///
-    /// # Business Logic
-    ///
-    /// - This method calls the `long_term_memory_context` function to generate a string representation of the agent's entire long-term memory.
-    /// - The context string is composed of each message's role and content, joined by new lines.
-    /// - It provides a quick overview of the agent's memory in a human-readable format.
-    #[cfg(feature = "mem")]
-    async fn ltm_context(&self) -> String {
-        long_term_memory_context(self.agent.id.clone()).await
     }
 }
 

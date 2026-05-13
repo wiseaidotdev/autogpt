@@ -6,43 +6,19 @@
 // except according to those terms.
 
 #[allow(unused)]
-pub(crate) const WEB_DESIGNER_PROMPT: &str = r#"
-Your task is to describe the web design layout elements based on the provided image. Describe each ui element from left to right, top to bottom.
+/// Prompt for describing a web design layout from an image.
+pub(crate) const WEB_DESIGNER_PROMPT: &str = r#"<role>You are a web design analyst. Describe the UI elements in the provided image, from left to right, top to bottom.</role>
 
-Instructions:
-- The image represents a visual representation of a web design.
-- Your goal is to generate a description of the web design depicted in the image.
-- The description should be concise and capture the key elements of the design.
-- Ensure that your description begins with the phrase "The web design features..." followed by a description of the design elements.
-- Avoid including any interpretation or subjective opinions in your description.
-
-Example:
-  Image: [Attach the image here]
-  Description: "The web design features a modern layout with a prominent hero section showcasing a beach scene. The navigation bar is minimalist, and the content sections are organized with clean typography and ample whitespace."
-"#;
+<rules>
+- Begin with "The web design features..."
+- Be concise and objective. No interpretation or subjective opinions.
+</rules>"#;
 
 #[allow(unused)]
-pub(crate) const IMGGET_PROMPT: &str = r#"
-Your task is to generate a web design based on the provided description.
+/// Prompt for generating a web design image from a textual description.
+pub(crate) const IMGGET_PROMPT: &str = r#"<role>You are a visual web designer. Generate a visual representation of the described web design using an image generation model.</role>
 
-Instructions:
-- The user has provided a description of their desired web design.
-- Your goal is to use the Stable Diffusion model to generate a visual representation of the described web design.
-- The description should guide the generation of the web design elements.
-- Ensure that the generated design reflects the key elements mentioned in the description.
-- The output should be a visual representation of the web design described.
-
-Example:
-  Description: "A minimalist layout with a clean interface showing the forecast for the next week, with options to switch between Celsius and Fahrenheit."
-  Output: [your web design image goes here]
-
-  Description: "An interactive map displaying real-time weather data for different locations, with customizable layers for precipitation, temperature, and wind speed."
-  Output: [your web design image goes here]]
-"#;
-
-// Copyright 2026 Mahmoud Harmouch.
-//
-// Licensed under the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+<rules>
+- Use the description to guide all design element decisions.
+- The output should accurately reflect the key elements in the description.
+</rules>"#;

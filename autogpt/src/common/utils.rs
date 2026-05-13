@@ -113,7 +113,8 @@ use x_ai::{chat_compl::Message as XaiMessage, client::XaiClient, traits::ClientC
 #[cfg(feature = "gem")]
 pub use gems::{
     Client as GeminiClient,
-    messages::{Content, Message as GeminiMessage},
+    chat::ChatBuilder,
+    messages::{Content, Message as GemMessage},
     models::Model as GeminiModel,
     traits::CTrait,
 };
@@ -861,7 +862,7 @@ pub enum ProviderMessage {
 
     /// Google Gemini message type.
     #[cfg(feature = "gem")]
-    Gemini(GeminiMessage),
+    Gemini(GemMessage),
 
     /// Anthropic Claude message type.
     #[cfg(feature = "cld")]
@@ -901,7 +902,7 @@ impl Default for ProviderMessage {
             feature = "gem"
         ))]
         {
-            ProviderMessage::Gemini(GeminiMessage::User {
+            ProviderMessage::Gemini(GemMessage::User {
                 content: Content::Text("Hello".into()),
                 name: None,
             })
@@ -971,7 +972,7 @@ impl ProviderMessage {
             feature = "gem"
         ))]
         {
-            ProviderMessage::Gemini(GeminiMessage::User {
+            ProviderMessage::Gemini(GemMessage::User {
                 content: Content::Text(_text.into()),
                 name: None,
             })

@@ -12,10 +12,10 @@ To install AutoGPT CLI via Cargo, execute the following command:
 cargo install autogpt --all-features
 ```
 
-To install with specific features (e.g., MoP and Gemini):
+To install with specific features (e.g., MoP, Gemini, and MCP):
 
 ```sh
-cargo install autogpt --features "cli,gem,mop"
+cargo install autogpt --features "cli,gem,mop,mcp"
 ```
 
 ### 🐳 Using Docker
@@ -377,6 +377,7 @@ To configure the CLI and or the SDK environment, follow these steps:
    - `anthropic` - Initializes the Anthropic Claude client (**requires** the `cld` feature).
    - `xai` - Initializes the XAI Grok client (**requires** the `xai` feature).
    - `cohere` - Initializes the Cohere client (**requires** the `co` feature).
+   - `huggingface` - Initializes the HuggingFace Inference API client (**requires** the `hf` feature).
 
    ```sh
    # Use Gemini (default, requires `--features gem`)
@@ -393,9 +394,12 @@ To configure the CLI and or the SDK environment, follow these steps:
 
    # Use Cohere (requires `--features co`)
    export AI_PROVIDER=cohere
+
+   # Use HuggingFace Inference API (requires `--features hf`)
+   export AI_PROVIDER=huggingface
    ```
 
-   Make sure to enable the corresponding Cargo features (`gem`, `oai`, `xai`, `cld`, `co`, or `mop`) when building your project.
+   Make sure to enable the corresponding Cargo features (`gem`, `oai`, `xai`, `cld`, `co`, `hf`, or `mop`) when building your project.
 
 ### 🔀 Mixture of Providers (MoP) Configuration
 
@@ -420,6 +424,9 @@ Example: If you have `GEMINI_API_KEY` and `OPENAI_API_KEY` set, and build with `
 
    # Cohere
    export COHERE_API_KEY=<your_cohere_api_key>
+
+   # HuggingFace
+   export HF_API_KEY=<your_huggingface_api_key>
    ```
 
    Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).

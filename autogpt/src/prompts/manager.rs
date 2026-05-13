@@ -6,103 +6,49 @@
 // except according to those terms.
 
 #![allow(dead_code)]
-pub(crate) const MANAGER_PROMPT: &str = r#"
-Your task is to translate user requests into concise project steps given the project goal and the role of the agent (e.g. frontend, backend, etc).
 
-Instructions:
-- The user will provide an input, and your task is to generate summarized project goal steps, each as a bullet point.
-- Develop the logic to accurately process user input and produce concise project goals.
-- Ensure that your output does include the selected programming language, web framework in the project's bullet points.
+/// Prompt for translating a user request into agent-specific task steps.
+pub(crate) const MANAGER_PROMPT: &str = r#"<role>You are a project manager orchestrating specialized engineering agents. Translate the user's project goal into concise, role-specific task steps for the assigned agent.</role>
 
-Example 1:
-  User Request: Project Goal: "Develop a platform for online courses with video streaming, quizzes, and progress tracking.", Agent Role: "frontend", programming language: "JavaScript", framework: "React.js"
-  Output: 
-  - Using React.js, build a website in JavaScript that provides online courses with video streaming.
-  - Step 1: Define the basic layout and structure of the website.
-  - Step 2: Implement video streaming functionality using appropriate libraries or APIs.
+<rules>
+- Output bullet-point steps tailored to the agent's role, language, and framework.
+- Include the programming language and framework name in your output.
+- No preamble, no commentary beyond the steps.
+</rules>
 
-Example 2:
-  User Request: Project Goal: "Create a mobile application for task management with calendar integration and notification features.", Agent Role: "backend", programming language: "Python", framework: "Django"
-  Output: 
-  - Utilizing Django, develop a backend in Python for a task management mobile app with calendar integration and notification features.
-  - Step 1: Set up database models for tasks and user data.
-  - Step 2: Implement calendar integration and notification services using Django's built-in features or external libraries.
+<examples>
+<example>
+Input: Project Goal: "Online course platform with video streaming." Agent: "frontend", Language: "JavaScript", Framework: "React.js"
+Output:
+- Using React.js, build a JavaScript UI for online courses with video streaming.
+- Step 1: Define the layout and component structure.
+- Step 2: Implement video streaming using appropriate React libraries.
+</example>
+<example>
+Input: Project Goal: "Task management mobile app with calendar." Agent: "backend", Language: "Python", Framework: "Django"
+Output:
+- Using Django, develop a Python backend for a task management app with calendar integration.
+- Step 1: Set up database models for tasks and user data.
+- Step 2: Implement calendar integration and notification services.
+</example>
+</examples>"#;
 
-Example 3:
-  User Request: Project Goal: "Build an e-commerce website with product catalog, user authentication, and payment gateway integration.", Agent Role: "full-stack", programming language: "JavaScript", framework: "Node.js"
-  Output: 
-  - With Node.js, create a full-stack JavaScript application for an e-commerce website featuring a product catalog, user authentication, and payment gateway integration.
-  - Step 1: Design and develop the front-end interface for product catalog and user authentication.
-  - Step 2: Integrate payment gateway APIs and implement secure transaction handling on the backend.
+/// Prompt for extracting the programming language from a user request.
+pub(crate) const LANGUAGE_MANAGER_PROMPT: &str = r#"<role>You are a language extractor. Identify the programming language mentioned in the user request.</role>
 
-Example 4:
-  User Request: Project Goal: "Develop a chat application with real-time messaging and file sharing functionality.", Agent Role: "frontend", programming language: "TypeScript", framework: "Vue.js"
-  Output: 
-  - Using Vue.js, design a frontend in TypeScript for a chat application offering real-time messaging and file sharing functionality.
-  - Step 1: Set up WebSocket connection for real-time messaging between users.
-  - Step 2: Implement file upload/download functionality and integrate it with the chat interface.
+Output only the programming language name. No commentary, no punctuation.
 
-Example 5:
-  User Request: Project Goal: "Design a social media platform with profiles, posts, comments, and messaging features.", Agent Role: "backend", programming language: "Java", framework: "Spring Boot"
-  Output: 
-  - Implementing Spring Boot, construct a backend in Java for a social media platform encompassing profiles, posts, comments, and messaging features.
-  - Step 1: Define database schemas for user profiles, posts, comments, and messages.
-  - Step 2: Develop RESTful APIs for CRUD operations on user data, posts, and comments, as well as messaging functionalities.
-"#;
+<examples>
+"Build a data analysis tool using Python" → Python
+"Implement backend services using Java" → Java
+</examples>"#;
 
-pub(crate) const LANGUAGE_MANAGER_PROMPT: &str = r#"
-Your task is to extract the programming language mentioned in the user requests.
+/// Prompt for extracting the web framework from a user request.
+pub(crate) const FRAMEWORK_MANAGER_PROMPT: &str = r#"<role>You are a framework extractor. Identify the web framework mentioned in the user request.</role>
 
-Instructions:
-- The user will provide an input describing a project goal along with the programming language used.
-- Your task is to identify and output the programming language mentioned in the input.
-- Ensure that your output does not include any commentary other than the programming language.
+Output only the framework name followed by "framework". No other commentary.
 
-Example 1:
-  User Request: "Develop a platform for online courses with video streaming, quizzes, and progress tracking using Python"
-  Output: Python
-
-Example 2:
-  User Request: "Create a mobile application for task management with calendar integration and notification features using JavaScript"
-  Output: JavaScript
-
-Example 3:
-  User Request: "Build a data analysis tool for financial forecasting using R programming language"
-  Output: R
-
-Example 4:
-  User Request: "Implement backend services for a social media platform using Java"
-  Output: Java
-"#;
-
-pub(crate) const FRAMEWORK_MANAGER_PROMPT: &str = r#"
-Your task is to extract the web framework mentioned in the user requests.
-
-Instructions:
-- The user will provide an input describing a project goal along with the web framework used.
-- Your task is to identify and output the web framework mentioned in the input.
-- Ensure that your output does not include any commentary other than the web framework.
-
-Example 1:
-  User Request: "Develop a platform for online courses with video streaming, quizzes, and progress tracking using FastAPI web framework"
-  Output: FastAPI framework
-
-Example 2:
-  User Request: "Create a mobile application for task management with calendar integration and notification features using the React.js web framework"
-  Output: React.js framework
-
-Example 3:
-  User Request: "Build a blogging website with Django framework"
-  Output: Django framework
-
-Example 4:
-  User Request: "Develop a real-time chat application using Axum framework"
-  Output: Axum framework
-"#;
-
-// Copyright 2026 Mahmoud Harmouch.
-//
-// Licensed under the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+<examples>
+"Build a platform using FastAPI" → FastAPI framework
+"Create an app using React.js" → React.js framework
+</examples>"#;

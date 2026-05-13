@@ -667,7 +667,11 @@ async fn main() -> Result<()> {
                                     .bold()
                             );
 
-                            let _ = manager.execute(true, true, 3).await;
+                            let mut task = Task {
+                                description: input.clone().into(),
+                                ..Default::default()
+                            };
+                            let _ = manager.execute(&mut task, true, true, 3).await;
                             info!("{}", "[*] \"AGI\": ✅ Done!".green().bold());
                         } else {
                             warn!("{}", "[*] \"AGI\": 🤔 You've entered an empty project description? What exactly does that entail?"
@@ -681,7 +685,7 @@ async fn main() -> Result<()> {
                     let behavior = "Expertise at managing projects at scale";
                     let persona = "ArchitectGPT";
                     #[cfg(all(feature = "gpt", feature = "git"))]
-                    let mut git_agent = GitGPT::default();
+                    let mut git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
                     let mut architect_agent = ArchitectGPT::new(persona, behavior).await;
                     let workspace = workspace.clone() + "architect";
                     info!(
@@ -788,7 +792,7 @@ async fn main() -> Result<()> {
                     let behavior = "Expertise lies in writing frontend code";
                     let persona = "FrontendGPT";
                     #[cfg(all(feature = "gpt", feature = "git"))]
-                    let mut git_agent = GitGPT::default();
+                    let mut git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
                     let workspace = workspace.clone() + "frontend";
                     let mut frontend_agent = FrontendGPT::new(persona, behavior, language).await;
 
@@ -897,7 +901,7 @@ async fn main() -> Result<()> {
                         "Expertise lies in writing backend code for web servers and databases";
                     let persona = "BackendGPT";
                     #[cfg(all(feature = "gpt", feature = "git"))]
-                    let mut git_agent = GitGPT::default();
+                    let mut git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
                     let workspace = workspace.clone() + "backend";
                     let mut backend_gpt = BackendGPT::new(persona, behavior, language).await;
 
@@ -1006,7 +1010,7 @@ async fn main() -> Result<()> {
                     let behavior = "Crafts stunning web design layouts";
                     let persona = "Web Designer";
                     #[cfg(all(feature = "gpt", feature = "git"))]
-                    let mut git_agent = GitGPT::default();
+                    let mut git_agent = GitGPT::new("GitGPT", "Commit all changes").await;
                     let mut designer_agent = DesignerGPT::new(persona, behavior).await;
                     let mut task = Task {
                         description: "".into(),

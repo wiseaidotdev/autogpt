@@ -234,6 +234,7 @@ fn global_settings_roundtrip_with_mcp() {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn global_settings_mcp_allowed_excluded_roundtrip() {
     let mut settings = GlobalSettings::default();
     settings.mcp_allowed = vec!["github".to_string()];
@@ -256,6 +257,7 @@ fn settings_manager_creates_file_with_defaults_when_missing() {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn settings_manager_persists_and_reloads() {
     let tmp = TempDir::new().unwrap();
     let mgr = settings_manager_in(&tmp);

@@ -6,49 +6,28 @@
 // except according to those terms.
 
 #![allow(dead_code)]
-pub(crate) const MODULARIZE_PROMPT: &str = r#"
-Your task is to refactor a monolithic source code file into a modular architecture.
 
-Instructions:
-- The user will provide the entire content of a single source file (e.g. `main.py`, `main.rs`, etc.).
-- Based on this content, return a clear and complete list of `new file names` that the code should be split into.
-- The filenames must reflect logical modules and folder structure. Use nested folders if needed.
-- Each filename must include its correct extension (e.g., `.py`, `.rs`, `.js`).
-- Return only the list - one filename per line. No bullet points, no extra text, no explanations.
-- Do not wrap the output in backticks or code blocks.
+/// Prompt for identifying the modular file structure of a monolithic source file.
+pub(crate) const MODULARIZE_PROMPT: &str = r#"<role>You are a code architect. Identify how a monolithic source file should be split into logical modules.</role>
 
-Example:
+<rules>
+- Return a list of new file paths, one per line, reflecting a clean modular structure.
+- Use nested folders where appropriate. Include correct file extensions.
+- No bullets, no explanations, no extra text, no backticks.
+</rules>
 
-Input:
-<monolithic source code>
+<source_code>{SOURCE_CODE}</source_code>"#;
 
-Output:
-utils/helpers.py
-models/item.py
-routes/api.py
-main.py
-"#;
+/// Prompt for extracting the code belonging to a specific module file from a full codebase.
+pub(crate) const SPLIT_PROMPT: &str = r#"<role>You are a code extraction engine. Write the complete, correct contents of the specified module file extracted from the provided codebase.</role>
 
-pub(crate) const SPLIT_PROMPT: &str = r#"
-You are given the full content of a codebase and a filename.
+<rules>
+- Extract and write only what belongs in this specific file.
+- The code must correctly import necessary modules and function independently when imported.
+- Output only raw source code starting from the first line. No backticks, no explanations.
+</rules>
 
-Your task is to extract the relevant portion of code that should go into this file, based on a modular project structure.
-
-Instructions:
-- Use the full code context to write the appropriate contents for the file provided.
-- The code must be correct, import necessary modules, and function independently when imported.
-- Only return the full code for that one file - do not explain, summarize, or list anything else.
-- Do not wrap the code in triple backticks or include any extra markers.
-- The output should be clean, raw source code, starting from the first line.
-
-Input:
-  Filename: `utils/helpers.py`
-  Full Project Code: <entire monolithic code>
-"#;
-
-// Copyright 2026 Mahmoud Harmouch.
-//
-// Licensed under the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+<context>
+<filename>{FILENAME}</filename>
+<full_codebase>{FULL_CODE}</full_codebase>
+</context>"#;

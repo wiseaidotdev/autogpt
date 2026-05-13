@@ -48,8 +48,8 @@ use {
     },
     crate::prompts::generic::{
         FOLLOWUP_SYNTHESIS_PROMPT, GENERIC_SYSTEM_PROMPT, IMPLEMENTATION_PLAN_PROMPT,
-        LESSON_EXTRACTION_PROMPT, REASONING_PROMPT, REFLECTION_PROMPT, TASK_EXECUTION_PROMPT,
-        TASK_SYNTHESIS_PROMPT, WALKTHROUGH_PROMPT,
+        LESSON_EXTRACTION_PROMPT, REASONING_PROMPT, REFLECTION_PROMPT, STATE_SUMMARIZATION_PROMPT,
+        TASK_EXECUTION_PROMPT, TASK_SYNTHESIS_PROMPT, WALKTHROUGH_PROMPT,
     },
     anyhow::anyhow,
     colored::Colorize,
@@ -354,8 +354,9 @@ impl Executor for GenericAgent {
         let tasks_snapshot = session.tasks.clone();
         let total = tasks_snapshot.len();
 
-        let mut consecutive_failures: u8 = 0;
+        let mut project_summary = String::new();
 
+        let mut consecutive_failures = 0;
         'task_loop: for (idx, task_item) in tasks_snapshot.iter().enumerate() {
             print_task_item(&task_item.description, TuiTaskStatus::InProgress);
             session.update_task_status(idx, SessionTaskStatus::InProgress);
@@ -376,11 +377,22 @@ impl Executor for GenericAgent {
                 .collect();
             let completed_refs: Vec<&str> = completed_descs.iter().map(|s| s.as_str()).collect();
 
+            if idx > 0 && idx % 3 == 0 {
+                project_summary = self.summarize_state(&prompt, &completed_refs).await;
+            } else if project_summary.is_empty() {
+                project_summary = completed_refs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| format!("{}. {}", i + 1, t))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            }
+
             let reasoning = self
                 .reason_about_task(
                     task_item,
                     &plan,
-                    &completed_refs,
+                    &project_summary,
                     idx + 1,
                     total,
                     &workspace,
@@ -408,7 +420,7 @@ impl Executor for GenericAgent {
                     idx + 1,
                     total,
                     &plan,
-                    &completed_refs,
+                    &project_summary,
                     &workspace_path,
                     &mut session,
                     &reasoning,
@@ -433,7 +445,7 @@ impl Executor for GenericAgent {
                             "Aborting task execution, resolve the provider issue and retry.",
                         );
                         session.update_task_status(idx, SessionTaskStatus::Failed);
-                        session_mgr.save(&session)?;
+                        let _ = session_mgr.save(&session);
                         return Err(e);
                     }
                     print_warning(&format!("Task execution error (continuing): {err_str}"));
@@ -482,13 +494,13 @@ impl Executor for GenericAgent {
                     for fi in idx..total {
                         session.update_task_status(fi, SessionTaskStatus::Failed);
                     }
-                    session_mgr.save(&session)?;
+                    let _ = session_mgr.save(&session);
                     break 'task_loop;
                 }
 
                 print_task_item(&task_item.description, TuiTaskStatus::Skipped);
                 session.update_task_status(idx, SessionTaskStatus::Failed);
-                session_mgr.save(&session)?;
+                let _ = session_mgr.save(&session);
                 results = vec![];
                 continue 'task_loop;
             }
@@ -534,7 +546,7 @@ impl Executor for GenericAgent {
                 }
             }
 
-            session_mgr.save(&session)?;
+            let _ = session_mgr.save(&session);
         }
 
         let build_succeeded = self
@@ -585,7 +597,7 @@ impl Executor for GenericAgent {
 
         wt_spinner.finish_and_clear();
         session.set_walkthrough(&walkthrough);
-        session_mgr.save(&session)?;
+        let _ = session_mgr.save(&session);
 
         print_section("📓 Session Walkthrough");
         render_markdown(&walkthrough);
@@ -721,18 +733,11 @@ impl GenericAgent {
         &mut self,
         task: &SessionTask,
         plan: &str,
-        completed: &[&str],
+        completed_tasks: &str,
         task_num: usize,
         task_total: usize,
         workspace: &str,
     ) -> ReasoningResult {
-        let completed_str = completed
-            .iter()
-            .enumerate()
-            .map(|(i, t)| format!("{}. {}", i + 1, t))
-            .collect::<Vec<_>>()
-            .join("\n");
-
         let plan_lines: Vec<&str> = plan.lines().collect();
         let search_key = &task.description[..task.description.len().min(40)];
         let plan_excerpt: String = plan_lines
@@ -757,7 +762,7 @@ impl GenericAgent {
                 .replace("{TASK_TOTAL}", &task_total.to_string())
                 .replace("{TASK_DESCRIPTION}", &task.description)
                 .replace("{PLAN_EXCERPT}", &effective_excerpt)
-                .replace("{COMPLETED_TASKS}", &completed_str)
+                .replace("{COMPLETED_TASKS}", completed_tasks)
                 .replace("{WORKSPACE}", workspace)
         );
 
@@ -793,18 +798,11 @@ impl GenericAgent {
         task_num: usize,
         task_total: usize,
         plan: &str,
-        completed: &[&str],
+        completed_tasks: &str,
         workspace: &Path,
         session: &mut Session,
         reasoning: &ReasoningResult,
     ) -> Result<Vec<ActionResult>> {
-        let completed_str = completed
-            .iter()
-            .enumerate()
-            .map(|(i, t)| format!("{}. {}", i + 1, t))
-            .collect::<Vec<_>>()
-            .join("\n");
-
         let plan_lines: Vec<&str> = plan.lines().collect();
         let plan_excerpt: String = plan_lines
             .iter()
@@ -814,6 +812,7 @@ impl GenericAgent {
             .collect::<Vec<_>>()
             .join("\n");
 
+        self.agent.truncate_memory(20_000);
         let reasoning_text = if reasoning.thought.is_empty() {
             String::new()
         } else {
@@ -839,7 +838,7 @@ impl GenericAgent {
                     &plan_excerpt
                 },
             )
-            .replace("{COMPLETED_TASKS}", &completed_str)
+            .replace("{COMPLETED_TASKS}", completed_tasks)
             .replace("{REASONING}", &reasoning_text);
 
         let combined = format!(
@@ -1607,6 +1606,24 @@ impl GenericAgent {
             &raw[..raw.len().min(200)]
         ))
     }
+
+    async fn summarize_state(&mut self, prompt: &str, completed: &[&str]) -> String {
+        let task_list = completed
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| format!("{}. {}", i + 1, t))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let summary_prompt = STATE_SUMMARIZATION_PROMPT
+            .replace("{PROMPT}", prompt)
+            .replace("{COMPLETED_TASKS}", &task_list);
+
+        match self.generate(&summary_prompt).await {
+            Ok(s) if !s.trim().is_empty() => s,
+            _ => task_list,
+        }
+    }
 }
 
 /// Lesson data extracted at the end of a session for the skill store.
@@ -2004,11 +2021,18 @@ pub async fn run_generic_agent_loop(
                 let completed_refs: Vec<&str> =
                     completed_descs.iter().map(|s| s.as_str()).collect();
 
+                let completed_tasks = completed_refs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| format!("{}. {}", i + 1, t))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
                 let reasoning = agent
                     .reason_about_task(
                         task_item,
                         &plan,
-                        &completed_refs,
+                        &completed_tasks,
                         idx + 1,
                         total,
                         &workspace,
@@ -2036,7 +2060,7 @@ pub async fn run_generic_agent_loop(
                         idx + 1,
                         total,
                         &plan,
-                        &completed_refs,
+                        &completed_tasks,
                         &workspace_path,
                         &mut new_session,
                         &reasoning,
