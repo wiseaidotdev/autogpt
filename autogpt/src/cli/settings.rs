@@ -80,6 +80,13 @@ pub struct GlobalSettings {
     /// Whether to auto-open the browser when the agent produces a runnable app.
     #[serde(default = "default_true")]
     pub auto_browse: bool,
+
+    /// Whether DuckDuckGo web search is enabled during task execution.
+    ///
+    /// Set to `false` (via `--no-internet`) to disable all outbound search requests.
+    /// Persisted so the preference survives restarts without re-passing the flag.
+    #[serde(default = "default_true")]
+    pub internet_access: bool,
 }
 
 #[cfg(feature = "cli")]
@@ -126,6 +133,7 @@ impl Default for GlobalSettings {
             verbose: false,
             max_retries: default_max_retries(),
             auto_browse: true,
+            internet_access: true,
         }
     }
 }

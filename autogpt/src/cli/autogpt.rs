@@ -113,6 +113,13 @@ pub struct Cli {
     #[arg(short, long, default_value_t = false)]
     pub yolo: bool,
 
+    /// Disable DuckDuckGo web search during task execution.
+    ///
+    /// By default the agent may perform web searches to gather information
+    /// needed to complete tasks. Pass this flag to restrict all network access.
+    #[arg(long, default_value_t = false)]
+    pub no_internet: bool,
+
     /// Resume a specific previous session by its session ID.
     ///
     /// The session ID is the UUID shown in `/sessions`. When provided, AutoGPT
@@ -128,6 +135,10 @@ pub struct Cli {
     #[cfg(feature = "mop")]
     #[arg(short = 'm', long, default_value_t = false)]
     pub mixture: bool,
+
+    /// Optional workspace path (can be "." for current directory)
+    #[arg(value_name = "WORKSPACE")]
+    pub workspace: Option<String>,
 
     /// Subcommands for autogpt.
     #[clap(subcommand)]

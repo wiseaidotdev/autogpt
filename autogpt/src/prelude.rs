@@ -7,7 +7,7 @@
 
 #![doc = include_str!("../INSTALLATION.md")]
 
-use {futures::future::join_all, tokio::task, tracing::error};
+use {futures::future::join_all, tokio::task};
 
 #[cfg(all(feature = "gpt", feature = "img"))]
 pub use crate::agents::designer::DesignerGPT;
@@ -255,16 +255,10 @@ impl AutoGPT {
                     .await
                 {
                     Ok(_) => {
-                        debug!("Agent {} ({}) executed successfully", i, agent_behavior);
+                        tracing::debug!("Agent {} ({}) executed successfully", i, agent_behavior);
                         Ok::<(), anyhow::Error>(())
                     }
-                    Err(err) => {
-                        error!(
-                            "Agent {} ({}) failed with error: {}",
-                            i, agent_behavior, err
-                        );
-                        Err(anyhow!("Agent {} failed: {}", i, err))
-                    }
+                    Err(err) => Err(anyhow!("Agent {} failed: {}", i, err)),
                 }
             });
 

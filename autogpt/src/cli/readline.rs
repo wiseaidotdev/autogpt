@@ -199,7 +199,7 @@ fn draw_box(
     out: &mut impl Write,
 ) -> io::Result<()> {
     let inner = w.saturating_sub(2) as usize;
-    write!(out, "{}\r\n", visible_truncate(status, w as usize))?;
+    write!(out, "\r{}\r\n", visible_truncate(status, w as usize))?;
     execute!(
         out,
         SetForegroundColor(Color::Blue),

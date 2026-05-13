@@ -446,7 +446,6 @@ pub fn extract_json_string(text: &str) -> Option<String> {
 }
 
 pub fn extract_array(text: &str) -> Option<String> {
-    // Check if the text starts with '[' and ends with ']'
     if text.starts_with('[') && text.ends_with(']') {
         Some(text.to_string())
     } else if let Some(start_index) = text.find("[\"") {
@@ -468,6 +467,19 @@ pub fn extract_array(text: &str) -> Option<String> {
         }
 
         Some(text[start_index..end_index].to_string())
+    } else {
+        None
+    }
+}
+
+/// Extracts the first balanced `{...}` JSON object from arbitrary text.
+///
+/// Used as a fallback when LLM output wraps JSON in prose or markdown fences.
+pub fn extract_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    if end >= start {
+        Some(text[start..=end].to_string())
     } else {
         None
     }

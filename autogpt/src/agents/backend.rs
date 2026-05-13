@@ -54,7 +54,7 @@ use crate::common::utils::spinner;
 use crate::common::utils::{
     Capability, ClientType, ContextManager, GenerationOutput, Goal, Knowledge, Message, OutputKind,
     Persona, Planner, Reflection, Route, Scope, Status, Task, TaskScheduler, Tool, extract_array,
-    strip_code_blocks,
+    extract_json_object, strip_code_blocks,
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
@@ -204,10 +204,31 @@ impl BackendGPT {
     async fn setup_environment(&mut self, workspace: &str) -> Result<String> {
         let setup_prompt = ENV_SETUP_PROMPT.replace("{LANGUAGE}", self.language);
         let response = self.generate(&setup_prompt).await?;
-        let clean_json = strip_code_blocks(&response);
+        debug!(
+            "[*] {:?}: ENV_SETUP raw response: {:?}",
+            self.agent.persona(),
+            &response[..response.len().min(400)]
+        );
 
-        let setup: serde_json::Value = serde_json::from_str(&clean_json)
-            .map_err(|e| anyhow!("Failed to parse setup JSON: {e} | Raw: {clean_json}"))?;
+        let clean_json = strip_code_blocks(&response);
+        let candidate = if clean_json.contains('{') {
+            clean_json.clone()
+        } else {
+            extract_json_object(&response).unwrap_or(clean_json.clone())
+        };
+
+        let setup: serde_json::Value = serde_json::from_str(candidate.trim())
+            .or_else(|_| {
+                extract_json_object(&response)
+                    .ok_or_else(|| anyhow!("no JSON object found"))
+                    .and_then(|s| serde_json::from_str(s.trim()).map_err(|e| anyhow!("{e}")))
+            })
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to parse setup JSON: {e} | Raw: {}",
+                    &response[..response.len().min(300)]
+                )
+            })?;
 
         let commands = setup["commands"]
             .as_array()

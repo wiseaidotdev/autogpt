@@ -587,7 +587,14 @@ async fn main() -> Result<()> {
                     false
                 }
             };
-            run_generic_agent_loop(args.yolo, args.session.as_deref(), mixture).await?;
+            run_generic_agent_loop(
+                args.yolo,
+                !args.no_internet,
+                args.session.as_deref(),
+                mixture,
+                args.workspace,
+            )
+            .await?;
         } else if let Some(command) = args.command {
             #[cfg(feature = "gpt")]
             let workspace = var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace/".to_string());

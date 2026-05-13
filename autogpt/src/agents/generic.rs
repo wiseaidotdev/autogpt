@@ -40,6 +40,7 @@ use {
     crate::cli::models::{default_model, default_provider, model_index, provider_models},
     crate::cli::readline::{ReadlineResult, SLASH_COMMANDS, read_line},
     crate::cli::session::{Session, SessionManager, SessionTask, TaskStatus as SessionTaskStatus},
+    crate::cli::settings::SettingsManager,
     crate::cli::skills::SkillStore,
     crate::cli::tui::{
         TaskStatus as TuiTaskStatus, create_spinner, print_agent_msg, print_banner, print_error,
@@ -53,14 +54,28 @@ use {
     },
     anyhow::anyhow,
     colored::Colorize,
+    duckduckgo,
     serde::{Deserialize, Serialize},
     std::env,
     std::fs,
     std::io::{self, BufRead, Write as IoWrite},
     std::path::{Path, PathBuf},
+    std::process::Stdio,
     std::time::Duration,
     termimad::crossterm::event::{self, Event, KeyCode},
+    termimad::crossterm::terminal::{disable_raw_mode, enable_raw_mode},
+    tokio::io::{AsyncBufReadExt, BufReader},
+    tokio::process::Command,
+    tokio::time::{interval, sleep},
     tracing::{error, info, warn},
+};
+
+#[cfg(all(feature = "cli", feature = "mcp"))]
+use {
+    crate::cli::autogpt::commands::mcp as mcp_cmd,
+    crate::cli::tui::{render_mcp_help_entries, render_mcp_inspect, render_mcp_list},
+    crate::mcp::client::McpClient,
+    crate::mcp::types::McpServerInfo,
 };
 
 #[cfg(feature = "cli")]
@@ -129,6 +144,15 @@ pub enum ActionRequest {
         path: String,
         patches: Vec<(String, String)>,
     },
+    WebSearch {
+        query: String,
+    },
+    McpCall {
+        server: String,
+        tool: String,
+        #[serde(default)]
+        args: serde_json::Value,
+    },
 }
 
 /// Result of executing a single action directive.
@@ -196,6 +220,8 @@ pub struct GenericAgent {
     pub model: String,
     /// Provider name (gemini / openai / etc.) for session metadata.
     pub provider: String,
+    /// Whether web search (DuckDuckGo) is enabled (mirrors `--no-internet` flag inversion).
+    pub internet_access: bool,
 }
 
 #[cfg(feature = "cli")]
@@ -424,6 +450,7 @@ impl Executor for GenericAgent {
                     &workspace_path,
                     &mut session,
                     &reasoning,
+                    &exec_spinner,
                 )
                 .await;
 
@@ -432,6 +459,10 @@ impl Executor for GenericAgent {
                 Err(e) => {
                     exec_spinner.finish_and_clear();
                     let err_str = e.to_string();
+                    if err_str.contains("User aborted execution") {
+                        exec_spinner.finish_and_clear();
+                        return Err(e);
+                    }
                     if err_str.contains("402")
                         || err_str.contains("Payment")
                         || err_str.contains("quota")
@@ -476,33 +507,96 @@ impl Executor for GenericAgent {
                     }
                 }
 
-                consecutive_failures += 1;
-                print_warning(&format!(
-                    "No concrete actions succeeded for task {}/{} (consecutive failures: {}/{}).",
-                    idx + 1,
-                    total,
-                    consecutive_failures,
-                    MAX_CONSECUTIVE_FAILURES
-                ));
-
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                    print_error(&format!(
-                        "Aborting: {} consecutive tasks produced no output. \
-                         Check your API key, model, and prompt quality.",
-                        MAX_CONSECUTIVE_FAILURES
+                let mut backoff_success = false;
+                for attempt in 0..MAX_CONSECUTIVE_FAILURES {
+                    let delay_secs = [1, 5, 10].get(attempt as usize).copied().unwrap_or(10);
+                    print_warning(&format!(
+                        "LLM returned empty response for task {}/{} (attempt {}/{}).\
+                         Retrying in {}s. Check rate limits or token quota if this persists.",
+                        idx + 1,
+                        total,
+                        attempt + 1,
+                        MAX_CONSECUTIVE_FAILURES,
+                        delay_secs,
                     ));
-                    for fi in idx..total {
-                        session.update_task_status(fi, SessionTaskStatus::Failed);
+
+                    let mut sleep_interval = interval(Duration::from_millis(150));
+                    let sleep_start = std::time::Instant::now();
+                    let sleep_duration = Duration::from_secs(delay_secs);
+                    let mut aborted = false;
+                    let _ = enable_raw_mode();
+                    while sleep_start.elapsed() < sleep_duration {
+                        tokio::select! {
+                            _ = sleep_interval.tick() => {
+                                while event::poll(Duration::from_millis(0)).unwrap_or(false) {
+                                    if let Ok(Event::Key(key)) = event::read()
+                                        && (key.code == KeyCode::Esc || (key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'))) {
+                                            aborted = true;
+                                            break;
+                                    }
+                                }
+                            }
+                        }
+                        if aborted {
+                            break;
+                        }
                     }
-                    let _ = session_mgr.save(&session);
-                    break 'task_loop;
+                    let _ = disable_raw_mode();
+                    if aborted {
+                        return Err(anyhow!("User aborted execution."));
+                    }
+
+                    let retry_spinner =
+                        create_spinner(&format!("Retrying task {}/{}", idx + 1, total));
+                    let retry_result = self
+                        .execute_task(
+                            &prompt,
+                            task_item,
+                            idx + 1,
+                            total,
+                            &plan,
+                            &project_summary,
+                            &workspace_path,
+                            &mut session,
+                            &reasoning,
+                            &retry_spinner,
+                        )
+                        .await;
+
+                    match retry_result {
+                        Ok(retry_results) if retry_results.iter().any(|r| r.success) => {
+                            results = retry_results;
+                            backoff_success = true;
+                            break;
+                        }
+                        Err(e) if e.to_string().contains("User aborted execution") => {
+                            return Err(e);
+                        }
+                        _ => {
+                            consecutive_failures += 1;
+                        }
+                    }
                 }
 
-                print_task_item(&task_item.description, TuiTaskStatus::Skipped);
-                session.update_task_status(idx, SessionTaskStatus::Failed);
-                let _ = session_mgr.save(&session);
-                results = vec![];
-                continue 'task_loop;
+                if !backoff_success {
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                        print_error(&format!(
+                            "Aborting: {} consecutive tasks produced no output. \
+                             Check your API key, model, and prompt quality.",
+                            MAX_CONSECUTIVE_FAILURES
+                        ));
+                        for fi in idx..total {
+                            session.update_task_status(fi, SessionTaskStatus::Failed);
+                        }
+                        let _ = session_mgr.save(&session);
+                        break 'task_loop;
+                    }
+
+                    print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                    session.update_task_status(idx, SessionTaskStatus::Failed);
+                    let _ = session_mgr.save(&session);
+                    continue 'task_loop;
+                }
             }
 
             consecutive_failures = 0;
@@ -532,8 +626,14 @@ impl Executor for GenericAgent {
                         ));
                         results = Vec::new();
                         for action in &reflection.corrective_actions {
-                            let r = GenericAgent::run_action(action, &workspace_path, &mut session)
-                                .await;
+                            let r = GenericAgent::run_action(
+                                action,
+                                &workspace_path,
+                                &mut session,
+                                self.yolo,
+                                self.internet_access,
+                            )
+                            .await;
                             results.push(r);
                         }
                     }
@@ -590,7 +690,7 @@ impl Executor for GenericAgent {
                 .replace("{FILES_CREATED}", &files_str)
         );
 
-        let walkthrough = match self.generate(&wt_prompt).await {
+        let walkthrough = match self.generate_safe(&wt_prompt).await {
             Ok(w) if !w.trim().is_empty() => w,
             _ => SessionManager::generate_walkthrough(&session),
         };
@@ -637,6 +737,56 @@ impl Executor for GenericAgent {
 
 #[cfg(feature = "cli")]
 impl GenericAgent {
+    async fn generate_safe(&mut self, prompt: &str) -> anyhow::Result<String> {
+        let timeout_duration = Duration::from_secs(30);
+        let mut interval = interval(Duration::from_millis(150));
+        let llm_future = self.generate(prompt);
+        tokio::pin!(llm_future);
+
+        let _ = enable_raw_mode();
+        let res = loop {
+            tokio::select! {
+                res = &mut llm_future => {
+                    break res.map_err(|e| anyhow!("LLM Generation failed: {e}"));
+                }
+                _ = sleep(timeout_duration) => {
+                    error!("LLM API request timed out after 30 seconds.");
+                    break Err(anyhow!("LLM request timed out"));
+                }
+                _ = interval.tick() => {
+                    let mut aborted = false;
+                    while event::poll(Duration::from_millis(0)).unwrap_or(false) {
+                        if let Ok(Event::Key(key)) = event::read() {
+                            let is_abort = key.code == KeyCode::Esc ||
+                                (key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'));
+                            if is_abort {
+                                aborted = true;
+                                break;
+                            }
+                        }
+                    }
+                    if aborted {
+                        break Err(anyhow!("User aborted execution."));
+                    }
+                }
+            }
+        };
+        let _ = disable_raw_mode();
+        res
+    }
+
+    /// Calls the LLM and records request/response token estimates on `session.stats`.
+    async fn generate_and_track(
+        &mut self,
+        prompt: &str,
+        session: &mut Session,
+    ) -> anyhow::Result<String> {
+        session.record_request(prompt.len());
+        let response = self.generate_safe(prompt).await?;
+        session.record_response(response.len());
+        Ok(response)
+    }
+
     async fn synthesize_tasks(
         &mut self,
         prompt: &str,
@@ -654,7 +804,7 @@ impl GenericAgent {
                 .replace("{SKILLS_CONTEXT}", skills_context)
         );
 
-        let raw: String = self.generate(&full_prompt).await?;
+        let raw: String = self.generate_safe(&full_prompt).await?;
 
         let numbered: Vec<SessionTask> = raw
             .lines()
@@ -726,7 +876,7 @@ impl GenericAgent {
             .replace("{PROMPT}", prompt)
             .replace("{TASK_LIST}", &task_list);
 
-        self.generate(&full_prompt).await
+        self.generate_safe(&full_prompt).await
     }
 
     async fn reason_about_task(
@@ -766,7 +916,7 @@ impl GenericAgent {
                 .replace("{WORKSPACE}", workspace)
         );
 
-        let raw = self.generate(&full_prompt).await.unwrap_or_default();
+        let raw = self.generate_safe(&full_prompt).await.unwrap_or_default();
         let clean = strip_code_blocks(&raw);
 
         let parsed = serde_json::from_str::<ReasoningResult>(clean.trim());
@@ -802,6 +952,7 @@ impl GenericAgent {
         workspace: &Path,
         session: &mut Session,
         reasoning: &ReasoningResult,
+        spinner: &indicatif::ProgressBar,
     ) -> Result<Vec<ActionResult>> {
         let plan_lines: Vec<&str> = plan.lines().collect();
         let plan_excerpt: String = plan_lines
@@ -841,21 +992,47 @@ impl GenericAgent {
             .replace("{COMPLETED_TASKS}", completed_tasks)
             .replace("{REASONING}", &reasoning_text);
 
+        let mcp_tools_context = {
+            #[cfg(all(feature = "cli", feature = "mcp"))]
+            {
+                let settings = SettingsManager::new().load().unwrap_or_default();
+                let server_names: Vec<String> =
+                    settings.mcp.keys().map(|k| format!("{}:*", k)).collect();
+                if server_names.is_empty() {
+                    "none".to_string()
+                } else {
+                    server_names.join(", ")
+                }
+            }
+            #[cfg(not(all(feature = "cli", feature = "mcp")))]
+            {
+                "none".to_string()
+            }
+        };
+
         let combined = format!(
             "{}\n\nYou are operating inside workspace: {}\n\n{}",
             GENERIC_SYSTEM_PROMPT,
             workspace.display(),
-            execution_prompt
+            execution_prompt.replace("{MCP_TOOLS}", &mcp_tools_context)
         );
 
-        let raw = self.generate(&combined).await.unwrap_or_default();
+        let raw = self.generate_and_track(&combined, session).await?;
         let clean = crate::common::utils::strip_code_blocks(&raw);
         let actions: Vec<ActionRequest> = serde_json::from_str(clean.trim()).unwrap_or_default();
 
+        spinner.finish_and_clear();
+
+        let yolo = self.yolo;
+        let internet_access = self.internet_access;
         let mut results = Vec::new();
         for action in &actions {
-            let result = Self::run_action(action, workspace, session).await;
+            let result = Self::run_action(action, workspace, session, yolo, internet_access).await;
+            let success = result.success;
             results.push(result);
+            if !success {
+                break;
+            }
         }
 
         Ok(results)
@@ -866,6 +1043,8 @@ impl GenericAgent {
         action: &ActionRequest,
         workspace: &Path,
         session: &mut Session,
+        yolo: bool,
+        internet_access: bool,
     ) -> ActionResult {
         match action {
             ActionRequest::CreateDir { path } => {
@@ -1108,34 +1287,99 @@ impl GenericAgent {
                     args.join(" ").bright_white()
                 );
 
-                match tokio::process::Command::new(cmd)
-                    .args(args)
-                    .current_dir(&working_dir)
-                    .output()
-                    .await
-                {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                        let success = out.status.success();
-
-                        if !stdout.trim().is_empty() {
-                            for line in stdout.lines().take(20) {
-                                info!("    {}", line.bright_black());
-                            }
-                        }
-                        if !success && !stderr.trim().is_empty() {
-                            for line in stderr.lines().take(10) {
-                                error!("    {}", line.bright_red());
-                            }
-                        }
-
-                        ActionResult {
+                if !yolo {
+                    info!(
+                        "  {} Run this command? {} ",
+                        "?".bright_cyan().bold(),
+                        "(yes / no)".bright_black()
+                    );
+                    print!("> ");
+                    let _ = std::io::stdout().flush();
+                    let mut approval = String::new();
+                    let _ = std::io::stdin().lock().read_line(&mut approval);
+                    if !is_yes(approval.trim()) {
+                        return ActionResult {
                             action_type: "RunCommand".into(),
                             path: None,
-                            stdout,
-                            stderr,
-                            success,
+                            stdout: String::new(),
+                            stderr: "Command skipped by user.".into(),
+                            success: false,
+                        };
+                    }
+                }
+
+                let mut command = Command::new(cmd);
+                command.args(args).current_dir(&working_dir);
+
+                let venv_dir = workspace.join(".venv");
+                if venv_dir.exists() {
+                    let venv_bin = venv_dir.join("bin");
+                    if let Some(path) = std::env::var_os("PATH") {
+                        let mut new_path = venv_bin.into_os_string();
+                        new_path.push(":");
+                        new_path.push(path);
+                        command.env("PATH", new_path);
+                    } else {
+                        command.env("PATH", venv_bin);
+                    }
+                    command.env("VIRTUAL_ENV", venv_dir.as_os_str());
+                }
+
+                match command
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                {
+                    Ok(mut child) => {
+                        let stdout = child.stdout.take().expect("Failed to grab stdout");
+                        let stderr = child.stderr.take().expect("Failed to grab stderr");
+
+                        let stdout_handle = tokio::spawn(async move {
+                            let mut reader = BufReader::new(stdout).lines();
+                            let mut out = String::new();
+                            while let Ok(Some(line)) = reader.next_line().await {
+                                out.push_str(&line);
+                                out.push('\n');
+                                info!("    {}", line.bright_black());
+                            }
+                            out
+                        });
+
+                        let stderr_handle = tokio::spawn(async move {
+                            let mut reader = BufReader::new(stderr).lines();
+                            let mut err = String::new();
+                            while let Ok(Some(line)) = reader.next_line().await {
+                                err.push_str(&line);
+                                err.push('\n');
+                                error!("    {}", line.bright_red());
+                            }
+                            err
+                        });
+
+                        match child.wait().await {
+                            Ok(status) => {
+                                let stdout = stdout_handle.await.unwrap_or_default();
+                                let stderr = stderr_handle.await.unwrap_or_default();
+                                let success = status.success();
+
+                                ActionResult {
+                                    action_type: "RunCommand".into(),
+                                    path: None,
+                                    stdout,
+                                    stderr,
+                                    success,
+                                }
+                            }
+                            Err(e) => {
+                                error!("  {} Command failed: {}", "✗".bright_red(), e);
+                                ActionResult {
+                                    action_type: "RunCommand".into(),
+                                    path: None,
+                                    stdout: String::new(),
+                                    stderr: e.to_string(),
+                                    success: false,
+                                }
+                            }
                         }
                     }
                     Err(e) => {
@@ -1152,13 +1396,13 @@ impl GenericAgent {
             }
 
             ActionRequest::GitCommit { message } => {
-                let _ = tokio::process::Command::new("git")
+                let _ = Command::new("git")
                     .args(["add", "-A"])
                     .current_dir(workspace)
                     .output()
                     .await;
 
-                match tokio::process::Command::new("git")
+                match Command::new("git")
                     .args(["commit", "-m", message])
                     .current_dir(workspace)
                     .output()
@@ -1254,6 +1498,156 @@ impl GenericAgent {
                     },
                 }
             }
+
+            ActionRequest::WebSearch { query } => {
+                if !internet_access {
+                    info!(
+                        "  {} Web search disabled (--no-internet). Skipping: {}",
+                        "🌐".bright_black(),
+                        query.bright_black()
+                    );
+                    return ActionResult {
+                        action_type: "WebSearch".into(),
+                        path: None,
+                        stdout: String::new(),
+                        stderr: "Web search disabled via --no-internet flag.".into(),
+                        success: false,
+                    };
+                }
+
+                info!(
+                    "  {} Searching: {}",
+                    "🌐".bright_blue(),
+                    query.bright_cyan()
+                );
+
+                let browser = duckduckgo::browser::Browser::new();
+                let user_agent = duckduckgo::user_agents::get("firefox").unwrap_or("Mozilla/5.0");
+                match browser
+                    .lite_search(query, "wt-wt", Some(5), user_agent)
+                    .await
+                {
+                    Ok(results) if !results.is_empty() => {
+                        let formatted = results
+                            .iter()
+                            .enumerate()
+                            .map(|(i, r)| {
+                                format!(
+                                    "{}. {}\n   {}\n   {}",
+                                    i + 1,
+                                    r.title,
+                                    r.snippet.trim(),
+                                    r.url
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n\n");
+                        info!(
+                            "  {} {} results for {:?}",
+                            "✓".bright_green(),
+                            results.len(),
+                            query
+                        );
+                        ActionResult {
+                            action_type: "WebSearch".into(),
+                            path: None,
+                            stdout: formatted,
+                            stderr: String::new(),
+                            success: true,
+                        }
+                    }
+                    Ok(_) => ActionResult {
+                        action_type: "WebSearch".into(),
+                        path: None,
+                        stdout: String::new(),
+                        stderr: format!("No results found for query: {query}"),
+                        success: false,
+                    },
+                    Err(e) => {
+                        warn!("  {} DuckDuckGo search failed: {}", "⚠".bright_yellow(), e);
+                        ActionResult {
+                            action_type: "WebSearch".into(),
+                            path: None,
+                            stdout: String::new(),
+                            stderr: e.to_string(),
+                            success: false,
+                        }
+                    }
+                }
+            }
+
+            ActionRequest::McpCall { server, tool, args } => {
+                info!(
+                    "  {} {}::{} {:?}",
+                    "🔌".bright_magenta(),
+                    server.bright_cyan(),
+                    tool.bright_white(),
+                    args
+                );
+                #[cfg(all(feature = "cli", feature = "mcp"))]
+                {
+                    let server_name = server.clone();
+                    let tool_name = tool.clone();
+                    let call_args: std::collections::HashMap<String, serde_json::Value> = args
+                        .as_object()
+                        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                        .unwrap_or_default();
+
+                    let result = tokio::task::spawn_blocking(move || {
+                        let settings = SettingsManager::new().load()?;
+                        let config = settings.mcp.get(&server_name).cloned().ok_or_else(|| {
+                            anyhow::anyhow!("MCP server '{}' not configured", server_name)
+                        })?;
+                        let mut client = McpClient::new(&server_name);
+                        client.connect(&config)?;
+                        client.call_tool(&tool_name, call_args)
+                    })
+                    .await;
+
+                    match result {
+                        Ok(Ok(tool_result)) => {
+                            info!("  {} MCP call succeeded", "✓".bright_green());
+                            ActionResult {
+                                action_type: "McpCall".into(),
+                                path: None,
+                                stdout: tool_result.content,
+                                stderr: tool_result.error.unwrap_or_default(),
+                                success: tool_result.success,
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            warn!("  {} MCP call failed: {}", "⚠".bright_yellow(), e);
+                            ActionResult {
+                                action_type: "McpCall".into(),
+                                path: None,
+                                stdout: String::new(),
+                                stderr: e.to_string(),
+                                success: false,
+                            }
+                        }
+                        Err(join_err) => {
+                            warn!("  {} MCP task panicked: {}", "⚠".bright_yellow(), join_err);
+                            ActionResult {
+                                action_type: "McpCall".into(),
+                                path: None,
+                                stdout: String::new(),
+                                stderr: join_err.to_string(),
+                                success: false,
+                            }
+                        }
+                    }
+                }
+                #[cfg(not(all(feature = "cli", feature = "mcp")))]
+                {
+                    ActionResult {
+                        action_type: "McpCall".into(),
+                        path: None,
+                        stdout: String::new(),
+                        stderr: "MCP feature not enabled.".into(),
+                        success: false,
+                    }
+                }
+            }
         }
     }
 
@@ -1331,7 +1725,7 @@ impl GenericAgent {
 
         for attempt in 0..max_attempts {
             session.increment_build_attempt();
-            let result = Self::run_action(&build_action, workspace, session).await;
+            let result = Self::run_action(&build_action, workspace, session, true, false).await;
 
             if result.success {
                 print_success(&format!("Build passed on attempt {}", attempt + 1));
@@ -1363,13 +1757,13 @@ impl GenericAgent {
                 workspace.display()
             );
 
-            let raw = self.generate(&fix_prompt).await.unwrap_or_default();
+            let raw = self.generate_safe(&fix_prompt).await.unwrap_or_default();
             let clean = strip_code_blocks(&raw);
             let fix_actions: Vec<ActionRequest> =
                 serde_json::from_str(clean.trim()).unwrap_or_default();
 
             for action in &fix_actions {
-                let _ = Self::run_action(action, workspace, session).await;
+                let _ = Self::run_action(action, workspace, session, true, false).await;
             }
         }
 
@@ -1408,10 +1802,10 @@ impl GenericAgent {
             .replace("{COMMAND_OUTPUTS}", &outputs_str)
             .replace("{RETRY_ATTEMPT}", &retry_attempt.to_string());
 
-        let raw = self.generate(&full_prompt).await.unwrap_or_default();
-        let clean = crate::common::utils::strip_code_blocks(&raw);
+        let raw = self.generate_safe(&full_prompt).await.unwrap_or_default();
+        let clean = strip_code_blocks(&raw);
 
-        match serde_json::from_str(clean.trim()) {
+        match serde_json::from_str::<ReflectionResult>(clean.trim()) {
             Ok(result) => Ok(result),
             Err(_) => Ok(ReflectionResult {
                 outcome: ReflectionOutcome::Success,
@@ -1439,8 +1833,8 @@ impl GenericAgent {
             .replace("{TASKS}", &tasks_str)
             .replace("{RESULTS}", results_summary);
 
-        let raw = self.generate(&full_prompt).await.ok()?;
-        let clean = crate::common::utils::strip_code_blocks(&raw);
+        let raw = self.generate_safe(&full_prompt).await.ok()?;
+        let clean = strip_code_blocks(&raw);
 
         serde_json::from_str::<LessonOutput>(clean.trim())
             .ok()
@@ -1555,7 +1949,7 @@ impl GenericAgent {
                 .replace("{SKILLS_CONTEXT}", skills_context)
         );
 
-        let raw: String = self.generate(&full_prompt).await?;
+        let raw: String = self.generate_safe(&full_prompt).await?;
 
         let numbered: Vec<SessionTask> = raw
             .lines()
@@ -1619,7 +2013,7 @@ impl GenericAgent {
             .replace("{PROMPT}", prompt)
             .replace("{COMPLETED_TASKS}", &task_list);
 
-        match self.generate(&summary_prompt).await {
+        match self.generate_safe(&summary_prompt).await {
             Ok(s) if !s.trim().is_empty() => s,
             _ => task_list,
         }
@@ -1672,8 +2066,10 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
 #[cfg(feature = "cli")]
 pub async fn run_generic_agent_loop(
     yolo: bool,
+    internet_access: bool,
     session_id: Option<&str>,
     _mixture: bool,
+    custom_workspace: Option<String>,
 ) -> anyhow::Result<()> {
     print_banner();
     print_greeting();
@@ -1691,6 +2087,11 @@ pub async fn run_generic_agent_loop(
     let session_mgr = SessionManager::default();
     session_mgr.ensure_dirs()?;
 
+    let settings_mgr = SettingsManager::new();
+    let mut settings = settings_mgr.load().unwrap_or_default();
+    settings.internet_access = internet_access;
+    let _ = settings_mgr.save(&settings);
+
     let mut active_session: Option<Session> = None;
 
     if let Some(id) = session_id {
@@ -1706,15 +2107,8 @@ pub async fn run_generic_agent_loop(
                 );
                 info!("");
                 for msg in &session.messages {
-                    info!(
-                        "  {} {}",
-                        format!("[{}]", msg.role).bright_magenta(),
-                        msg.content
-                            .chars()
-                            .take(120)
-                            .collect::<String>()
-                            .bright_white()
-                    );
+                    info!("  {}", format!("[{}]", msg.role).bright_magenta());
+                    render_markdown(&msg.content);
                 }
                 info!("");
             }
@@ -1723,10 +2117,19 @@ pub async fn run_generic_agent_loop(
     }
 
     let workspace = env::var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| {
-        PathBuf::from(".")
-            .join("workspace")
-            .to_string_lossy()
-            .to_string()
+        if custom_workspace.as_deref() == Some(".") {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .to_string_lossy()
+                .to_string()
+        } else if let Some(path) = custom_workspace {
+            path
+        } else {
+            PathBuf::from(".")
+                .join("workspace")
+                .to_string_lossy()
+                .to_string()
+        }
     });
     fs::create_dir_all(&workspace)?;
 
@@ -1745,6 +2148,7 @@ pub async fn run_generic_agent_loop(
 
     let mut agent = GenericAgent {
         yolo,
+        internet_access: settings.internet_access,
         workspace: workspace.clone(),
         model: current_model.clone(),
         provider: current_provider.clone(),
@@ -1758,9 +2162,28 @@ pub async fn run_generic_agent_loop(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string());
 
+        let (sent_kb, recv_kb, reqs) = if let Some(sess) = &active_session {
+            (
+                sess.stats.tokens_sent / 4 / 1024,
+                sess.stats.tokens_received / 4 / 1024,
+                sess.stats.requests,
+            )
+        } else {
+            (0, 0, 0)
+        };
+        let internet_badge = if agent.internet_access {
+            "\x1b[32m🌐\x1b[0m"
+        } else {
+            "\x1b[90m🚫\x1b[0m"
+        };
+        let stats_seg = if reqs > 0 {
+            format!("  \x1b[93m↑{sent_kb}KB ↓{recv_kb}KB\x1b[0m \x1b[90m{reqs}req\x1b[0m")
+        } else {
+            String::new()
+        };
         let status_line = format!(
-            "  \x1b[94m{}\x1b[0m  \x1b[95m{}\x1b[0m  \x1b[90m{}\x1b[0m",
-            cwd_str, current_model, current_provider
+            "  \x1b[94m{}\x1b[0m  \x1b[95m{}\x1b[0m  \x1b[90m{}\x1b[0m{}  {}",
+            cwd_str, current_model, current_provider, stats_seg, internet_badge
         );
 
         #[allow(unused_mut)]
@@ -2028,6 +2451,13 @@ pub async fn run_generic_agent_loop(
                     .collect::<Vec<_>>()
                     .join("\n");
 
+                let exec_spinner = create_spinner(&format!(
+                    "Task {}/{}: {}",
+                    idx + 1,
+                    total,
+                    &task_item.description[..task_item.description.len().min(55)]
+                ));
+
                 let reasoning = agent
                     .reason_about_task(
                         task_item,
@@ -2064,6 +2494,7 @@ pub async fn run_generic_agent_loop(
                         &workspace_path,
                         &mut new_session,
                         &reasoning,
+                        &exec_spinner,
                     )
                     .await;
 
@@ -2168,12 +2599,18 @@ pub async fn run_generic_agent_loop(
                                     active_session = Some(s);
                             }
                     }
-                    // Err(e) => print_error(&format!("Agent error: {e:?}")),
-                    Err(_e) => {},
+                    Err(e) if e.to_string().contains("User aborted execution") => {
+                        print_warning("Execution interrupted by user (ESC pressed).");
+                        continue 'outer;
+                    }
+                    Err(e) => {
+                        print_error(&format!("Agent error: {e}"));
+                    },
                 }
             }
             _ = &mut interrupt_handle => {
                 print_warning("Execution interrupted by user (ESC pressed).");
+                continue 'outer;
             }
         }
     }
@@ -2274,15 +2711,8 @@ pub async fn handle_slash_command(
                             print_section("📂 Resumed Session");
                             info!("  {} {}", "▸".bright_cyan(), s.title.white().bold());
                             for msg in &s.messages {
-                                info!(
-                                    "  {} {}",
-                                    format!("[{}]", msg.role).bright_magenta(),
-                                    msg.content
-                                        .chars()
-                                        .take(120)
-                                        .collect::<String>()
-                                        .bright_white()
-                                );
+                                info!("  {}", format!("[{}]", msg.role).bright_magenta());
+                                render_markdown(&msg.content);
                             }
                             *active_session = Some(s);
                         }
@@ -2299,12 +2729,6 @@ pub async fn handle_slash_command(
     if input.starts_with("/mcp") {
         #[cfg(all(feature = "cli", feature = "mcp"))]
         {
-            use crate::cli::autogpt::commands::mcp as mcp_cmd;
-            use crate::cli::settings::SettingsManager;
-            use crate::cli::tui::{render_mcp_help_entries, render_mcp_inspect, render_mcp_list};
-            use crate::mcp::client::McpClient;
-            use crate::mcp::types::McpServerInfo;
-
             let parts: Vec<&str> = input.split(' ').collect();
             match parts.as_slice() {
                 ["/mcp"] | ["/mcp", "list"] => {
