@@ -55,6 +55,7 @@ AutoGPT agents are modular and autonomous, built from composable components:
 - 🧑‍🤝‍🧑 **Collaboration**: Agents can delegate, swarm, or work in teams with other agents.
 - 🪞 **Self-Reflection**: Introspection module to debug, adapt, or evolve internal strategies.
 - 🔄 **Context Management**: Manages active memory (context window) for ongoing tasks and conversations.
+- 🔌 **MCP (Model Context Protocol)**: Seamlessly connect to external tool servers (Stdio, SSE, HTTP) to extend agent capabilities with thousands of existing tools.
 - 📅 **Scheduler**: Time-based or reactive triggers for agent actions.
 
 ### 🚀 Developer Features
@@ -63,6 +64,7 @@ AutoGPT is designed for flexibility, integration, and scalability:
 
 - 🧪 **Custom Agent Creation**: Build tailored agents for different roles or domains.
 - 📋 **Task Orchestration**: Manage and distribute tasks across agents efficiently.
+- 🔌 **MCP Integration**: First-class support for the Model Context Protocol to unify tool access.
 - 🧱 **Extensibility**: Add new tools, behaviors, or agent types with ease.
 - 💻 **CLI Tools**: Command-line interface for rapid experimentation and control.
 - 🧰 **SDK Support**: Embed AutoGPT into existing projects or systems seamlessly.
@@ -91,23 +93,23 @@ autogpt
 
 The interactive shell supports the following commands:
 
-| Command         | Description                                                 |
-| --------------- | ----------------------------------------------------------- |
-| `<your prompt>` | Send a task to the GenericGPT autonomous agent              |
-| `/help`         | Show available commands                                     |
-| `/provider`     | Switch AI provider (Gemini, OpenAI, Anthropic, XAI, Cohere) |
-| `/models`       | Browse and switch between provider-native models            |
-| `/sessions`     | List and resume previous sessions                           |
-| `/status`       | Show current model, provider, and directory                 |
-| `/workspace`    | Show the current workspace path                             |
-| `/clear`        | Clear the terminal                                          |
-| `exit` / `quit` | Save session and quit                                       |
+| Command         | Description                                                              |
+| --------------- | ------------------------------------------------------------------------ |
+| `<your prompt>` | Send a task to the GenericGPT autonomous agent                           |
+| `/help`         | Show available commands                                                  |
+| `/provider`     | Switch AI provider (Gemini, OpenAI, Anthropic, XAI, Cohere, HuggingFace) |
+| `/models`       | Browse and switch between provider-native models                         |
+| `/sessions`     | List and resume previous sessions                                        |
+| `/status`       | Show current model, provider, and directory                              |
+| `/workspace`    | Show the current workspace path                                          |
+| `/clear`        | Clear the terminal                                                       |
+| `exit` / `quit` | Save session and quit                                                    |
 
 > Press `ESC` at any time to interrupt a running generation.
 
 ### 🔀 Mixture of Providers (MoP)
 
-AutoGPT introduces a high-availability **Mixture of Providers** architecture. When enabled via the `--mixture` or `-m` flag, every prompt is fanned out concurrently to all configured AI providers (Gemini, OpenAI, etc.). A weighted scoring engine evaluates responses based on:
+AutoGPT introduces a high-availability **Mixture of Providers** architecture. When enabled via the `--mixture` or `-m` flag, every prompt is fanned out concurrently to all configured AI providers (Gemini, OpenAI, HuggingFace, etc.). A weighted scoring engine evaluates responses based on:
 
 1. **Length calibration** (rewarding detail, penalizing fluff).
 1. **Code quality** (bonus for language-tagged Markdown blocks).

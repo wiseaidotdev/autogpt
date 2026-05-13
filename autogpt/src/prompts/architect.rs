@@ -6,128 +6,71 @@
 // except according to those terms.
 
 #![allow(dead_code)]
-pub(crate) const ARCHITECT_SCOPE_PROMPT: &str = r#"
-Generate a response tailored for website project descriptions.
 
-Instructions:
-- Provide a user request describing the desired functionalities and features for a website project.
-- Translate the user request into a structured JSON response listing the necessary components for building the website.
-- Ensure that at least one of the boolean flags in the response is set to true to indicate a required feature.
-- Use the following JSON format for the response:
+/// Prompt for identifying required architectural scope from a project description.
+pub(crate) const ARCHITECT_SCOPE_PROMPT: &str = r#"<role>You are a software architect. Identify which architectural capabilities a project requires.</role>
 
-{
-  "crud": bool, // Indicates if CRUD functionality is needed
-  "auth": bool, // Indicates if user authentication (login and logout) is required
-  "external": bool // Indicates if integration with external data sources is needed
-}
+Return ONLY this JSON object (no markdown, no commentary):
+{"crud":bool,"auth":bool,"external":bool}
 
-Examples:
-1. User Request: "Develop an online marketplace for buying and selling products."
-   Response:
-   {
-     "crud": true,
-     "auth": true,
-     "external": true
-   }
+- "crud": true if the project requires create/read/update/delete operations.
+- "auth": true if user authentication (login/logout) is required.
+- "external": true if integration with external APIs or data sources is needed.
 
-2. User Request: "Create a blog platform for publishing articles and comments."
-   Response:
-   {
-     "crud": true,
-     "auth": true,
-     "external": false
-   }
+At least one field must be true.
 
-3. User Request: "Build a portfolio website to showcase my projects and skills."
-   Response:
-   {
-     "crud": false,
-     "auth": false,
-     "external": false
-   }
-"#;
+<project_description>{PROJECT_DESCRIPTION}</project_description>"#;
 
-pub(crate) const ARCHITECT_ENDPOINTS_PROMPT: &str = r#"
-Generate a response focused on selecting external API endpoints for website development.
+/// Prompt for selecting relevant public API endpoints for a project.
+pub(crate) const ARCHITECT_ENDPOINTS_PROMPT: &str = r#"<role>You are a software architect. Identify public API endpoints that align with the project behaviors.</role>
 
-Instructions:
-- Provide a detailed project description outlining the purpose and functionalities required for the website.
-- Identify and compile a list of external public API endpoints that align with the project's behaviors.
-- Prioritize endpoints that do not require API keys for access.
-- Format the response as a list of URLs enclosed in square brackets, like so: ["url_1", "url_2", "url_3", ...]
+<rules>
+- Prioritize endpoints that do not require API keys.
+- Return a JSON array of URL strings: ["url_1", "url_2", ...]
+- Output only the JSON array. No commentary.
+</rules>
 
-Examples:
-1. Project Description: "Create a weather forecast website for global cities."
-   Response:
-   ["https://api.openweathermap.org/data/2.5/weather?q=London&appid=YOUR_API_KEY", "https://api.weatherapi.com/v1/current.json?key=YOUR_API_KEY&q=New%20York"]
+<project_description>{PROJECT_DESCRIPTION}</project_description>"#;
 
-2. Project Description: "Develop a news aggregator platform for top headlines."
-   Response:
-   ["https://newsapi.org/v2/top-headlines?country=us&apiKey=YOUR_API_KEY", "https://api.currentsapi.services/v1/latest-news"]
+/// Prompt for generating Python architecture diagrams using the diagrams library.
+pub(crate) const ARCHITECT_DIAGRAM_PROMPT: &str = r#"<role>You are a software architect. Generate Python code using the `diagrams` library to visualize the described architecture.</role>
 
-3. Project Description: "Build a real-time cryptocurrency price tracker."
-   Response:
-   ["https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", "https://api.nomics.com/v1/currencies/ticker?key=YOUR_API_KEY&ids=BTC"]
+<rules>
+- Generate accurate, runnable Python code using the `diagrams` library.
+- Adapt the examples below to match the specific requirements.
+- Output only the Python source code. No backticks, no commentary.
+</rules>
 
-4. Project Description: "Design a recipe sharing website with ingredient search functionality."
-   Response:
-   ["https://api.spoonacular.com/recipes/complexSearch?apiKey=YOUR_API_KEY&query=pasta", "https://www.themealdb.com/api/json/v1/1/search.php?s=chicken"]
+<examples>
+<example name="Stateful Architecture on Kubernetes">
+from diagrams import Cluster, Diagram
+from diagrams.k8s.compute import Pod, StatefulSet
+from diagrams.k8s.network import Service
+from diagrams.k8s.storage import PV, PVC, StorageClass
 
-Ensure the generated URLs correspond closely to the project's requirements and can be seamlessly integrated into the website.
-"#;
+with Diagram("Stateful Architecture", show=False):
+    with Cluster("Apps"):
+        svc = Service("svc")
+        sts = StatefulSet("sts")
+        apps = []
+        for _ in range(3):
+            pod = Pod("pod")
+            pvc = PVC("pvc")
+            pod - sts - pvc
+            apps.append(svc >> pod >> pvc)
+    apps << PV("pv") << StorageClass("sc")
+</example>
 
-pub(crate) const ARCHITECT_DIAGRAM_PROMPT: &str = r#"
-Generate Python diagram code using the diagrams library based on the provided architecture requirements.
+<example name="Exposed Pod with 3 Replicas on Kubernetes">
+from diagrams import Diagram
+from diagrams.k8s.clusterconfig import HPA
+from diagrams.k8s.compute import Deployment, Pod, ReplicaSet
+from diagrams.k8s.network import Ingress, Service
 
-Instructions:
-- Provide a detailed architectural diagram outlining the purpose and required functionalities for the system.
-- Ensure that the generated diagram code accurately represents the architecture described in the prompt.
-- Use the provided examples as templates, adapting them to match the specific requirements.
-- Customize the generated code by adding or modifying components as needed to reflect the architecture accurately.
-- Consider factors such as services, pods, deployments, replicas, storage, and networking components when generating the diagram.
-- Aim for clarity and coherence in the generated diagram code to facilitate understanding and communication.
+with Diagram("Exposed Pod with 3 Replicas", show=False):
+    net = Ingress("domain.com") >> Service("svc")
+    net >> [Pod("pod1"), Pod("pod2"), Pod("pod3")] << ReplicaSet("rs") << Deployment("dp") << HPA("hpa")
+</example>
+</examples>
 
-Examples:
-1. User Request: "Generate a Stateful Architecture on Kubernetes."
-   Response:
-      from diagrams import Cluster, Diagram
-      from diagrams.k8s.compute import Pod, StatefulSet
-      from diagrams.k8s.network import Service
-      from diagrams.k8s.storage import PV, PVC, StorageClass
-
-      with Diagram("Stateful Architecture", show=False):
-          with Cluster("Apps"):
-              svc = Service("svc")
-              sts = StatefulSet("sts")
-
-              apps = []
-              for _ in range(3):
-                  pod = Pod("pod")
-                  pvc = PVC("pvc")
-                  pod - sts - pvc
-                  apps.append(svc >> pod >> pvc)
-
-          apps << PV("pv") << StorageClass("sc")
-
-2. User Request: "Generate an Exposed Pod with 3 Replicas on Kubernetes."
-   Response:
-      from diagrams import Diagram
-      from diagrams.k8s.clusterconfig import HPA
-      from diagrams.k8s.compute import Deployment, Pod, ReplicaSet
-      from diagrams.k8s.network import Ingress, Service
-
-      with Diagram("Exposed Pod with 3 Replicas", show=False):
-          net = Ingress("domain.com") >> Service("svc")
-          net >> [Pod("pod1"),
-                  Pod("pod2"),
-                  Pod("pod3")] << ReplicaSet("rs") << Deployment("dp") << HPA("hpa")
-
-Ensure the generated code closely corresponds to the user prompt and project requirements.
-"#;
-
-// Copyright 2026 Mahmoud Harmouch.
-//
-// Licensed under the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+<user_request>{USER_REQUEST}</user_request>"#;

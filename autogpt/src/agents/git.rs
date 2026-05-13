@@ -110,9 +110,15 @@ impl Default for GitGPT {
         let repo =
             Repository::init(&temp_path).expect("Failed to initialize default Git repository");
 
+        let agent = AgentGPT {
+            persona: Cow::Borrowed("GitGPT"),
+            behavior: Cow::Borrowed("Commit all changes"),
+            ..AgentGPT::default()
+        };
+
         GitGPT {
             workspace: Cow::Owned(temp_path.clone()),
-            agent: AgentGPT::default(),
+            agent,
             repo: Mutex::new(repo),
             repo_path: temp_path.to_string(),
             client: ClientType::default(),
@@ -174,21 +180,6 @@ impl GitGPT {
         }
     }
 
-    /// Generates a Git author signature from the agent's persona.
-    ///
-    /// # Returns
-    ///
-    /// (`Signature`): A Git signature representing the current agent.
-    ///
-    /// # Errors
-    ///
-    /// Panics if signature creation fails.
-    fn author_signature(&self) -> Signature<'_> {
-        let name = self.agent.persona().to_string();
-        let email = format!("{}@wiseai.dev", name.to_lowercase().replace(" ", "_"));
-        Signature::now(&name, &email).expect("Failed to create signature")
-    }
-
     /// Stages all changes in the working directory.
     ///
     /// # Returns
@@ -222,7 +213,18 @@ impl GitGPT {
     async fn commit_changes(&self, message: &str) -> Result<()> {
         let repo = self.repo.lock().await;
 
-        let sig = self.author_signature();
+        let name = self.agent.persona().to_string();
+        let name = if name.is_empty() {
+            "GitGPT".to_string()
+        } else {
+            name
+        };
+        let email = format!("{}@wiseai.dev", name.to_lowercase().replace(" ", "_"));
+
+        let sig = Signature::now(&name, &email).unwrap_or_else(|_| {
+            repo.signature()
+                .unwrap_or_else(|_| Signature::now("GitGPT", "gitgpt@wiseai.dev").unwrap())
+        });
 
         let tree_oid = {
             let mut index = repo.index()?;

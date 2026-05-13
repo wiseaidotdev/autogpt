@@ -6,58 +6,59 @@
 // except according to those terms.
 
 #![allow(dead_code)]
-pub(crate) const FRONTEND_CODE_PROMPT: &str = r#"
-Your task is to generate frontend code for a web application using the selected framework.
 
-Instructions:
-- The user will provide a project description and a code template for a frontend web application.
-- The frontend code provided is only an example. Modify it as needed to match the project description.
-- Write components and functions that make sense for the user's request if required.
-- You can use the selected framework and any other necessary libraries.
-- You should only output the code, nothing else.
-- You should remove all backticks surrounding the source code. Remove the first and last lines(remove "```").
+/// Prompt for generating frontend code for any language and framework.
+pub(crate) const FRONTEND_CODE_PROMPT: &str = r#"<role>You are a senior frontend engineer. Generate complete, production-ready frontend code in the requested language and framework.</role>
 
-Example:
+<rules>
+- Base your implementation on the provided code template; modify it to match the project description.
+- Write components and functions appropriate for the request.
+- Output only raw source code. No backticks, no fences, no commentary.
+</rules>
 
-Input:
-  Project Description: "Build a simple todo list web application."
-  Code Template: "<div>{ for tasks.iter().map(|task| html! { <li>{ task }</li> }) }</div>"
+<context>
+<project>{TASK_DESCRIPTION}</project>
+<template>{CODE_TEMPLATE}</template>
+</context>"#;
 
-Output:
-<div>
-    <ul>
-        <li>Task 1</li>
-        <li>Task 2</li>
-        <li>Task 3</li>
-    </ul>
-</div>
-"#;
+/// Prompt for improving existing frontend code.
+pub(crate) const IMPROVED_FRONTEND_CODE_PROMPT: &str = r#"<role>You are a senior frontend engineer. Improve the provided frontend code.</role>
 
-pub(crate) const IMPROVED_FRONTEND_CODE_PROMPT: &str = r#"
-Your task is to improve the provided frontend code for a web application using the selected framework.
+<rules>
+- Fix any bugs and add any missing functionality required by the project description.
+- Output only raw source code. No backticks, no fences, no commentary.
+</rules>
 
-Instructions:
-- The user will provide a project description and a code template for a frontend web application.
-- Task:
-  1. Fix any bugs in the code and add minor additional functionality.
-  2. Ensure compliance with all frontend requirements specified in the project description. Add any missing features.
-  3. Write the code without any commentary.
-- You can use the selected framework and any other necessary libraries.
-- You should only output the code, nothing else.
-"#;
+<context>
+<project>{TASK_DESCRIPTION}</project>
+<current_code>{CODE_TEMPLATE}</current_code>
+</context>"#;
 
-pub(crate) const FIX_CODE_PROMPT: &str = r#"
-Your task is to fix the code with removed bugs.
+/// Prompt for fixing bugs in frontend code.
+pub(crate) const FIX_CODE_PROMPT: &str = r#"<role>You are a senior frontend engineer. Fix the bugs in the provided code.</role>
 
-Instructions:
-- The user will provide a broken code and the identified errors or bugs.
-- Your task is to fix the bugs in the code.
-- You should only output the new and improved code, without any commentary.
-"#;
+<rules>
+- Fix all identified bugs. Do not add unrelated changes.
+- Output only the corrected source code. No backticks, no fences, no commentary.
+</rules>"#;
 
-// Copyright 2026 Mahmoud Harmouch.
-//
-// Licensed under the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+/// Prompt for determining environment setup commands and entry point for any requested frontend language.
+pub(crate) const ENV_SETUP_PROMPT: &str = r#"<role>You are a senior DevOps and frontend architect. Given a programming language, provide the shell commands to scaffold a new project and the relative path to the primary source entry file.</role>
+
+<schema>
+Return a JSON object:
+{
+  "commands": ["command1", "command2"],
+  "entry_point": "path/to/main/file"
+}
+</schema>
+
+<rules>
+- Use standard, minimalist scaffolding (e.g., `npx create-vite-app@latest ./ --template vanilla` for JS/TS).
+- Commands must be non-interactive and suitable for a Linux shell.
+- The entry point should be the main file that will hold the frontend logic.
+- For Python, always use `.venv` as the virtual environment folder name.
+- Output ONLY the raw JSON object. No backticks, no commentary.
+</rules>
+
+<language>{LANGUAGE}</language>"#;

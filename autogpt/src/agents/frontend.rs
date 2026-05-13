@@ -60,7 +60,7 @@ use crate::common::utils::{
 #[cfg(feature = "hf")]
 use crate::prelude::hf_model_from_str;
 use crate::prompts::frontend::{
-    FIX_CODE_PROMPT, FRONTEND_CODE_PROMPT, IMPROVED_FRONTEND_CODE_PROMPT,
+    ENV_SETUP_PROMPT, FIX_CODE_PROMPT, FRONTEND_CODE_PROMPT, IMPROVED_FRONTEND_CODE_PROMPT,
 };
 use crate::traits::agent::Agent;
 use crate::traits::functions::{AsyncFunctions, Executor, Functions};
@@ -70,7 +70,7 @@ use colored::*;
 use reqwest::Client as ReqClient;
 use std::borrow::Cow;
 use std::env::var;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::fs;
@@ -98,7 +98,7 @@ use crate::traits::functions::ReqResponse;
 
 use async_trait::async_trait;
 
-/// Struct representing a `FrontendGPT`, which manages frontend code generation and testing using Gemini API.
+/// Struct representing a `FrontendGPT`, which manages frontend code generation and testing.
 #[derive(Debug, Clone, Default, Auto)]
 #[allow(unused)]
 pub struct FrontendGPT {
@@ -114,6 +114,8 @@ pub struct FrontendGPT {
     bugs: Option<Cow<'static, str>>,
     /// Represents the programming language used for frontend development.
     language: &'static str,
+    /// Represents the path to the primary source entry file, relative to `workspace`.
+    entry_point: String,
     /// Represents the number of bugs found in the code.
     nb_bugs: u64,
 }
@@ -123,8 +125,8 @@ impl FrontendGPT {
     ///
     /// # Arguments
     ///
-    /// * `behavior` - behavior description for FrontendGPT.
-    /// * `position` - Position description for FrontendGPT.
+    /// * `persona` - The role or identity of the agent.
+    /// * `behavior` - The goal or mission for the agent.
     /// * `language` - Programming language used for frontend development.
     ///
     /// # Returns
@@ -135,16 +137,14 @@ impl FrontendGPT {
     ///
     /// - Constructs the workspace directory path for FrontendGPT.
     /// - Initializes the GPT agent with the given persona, behavior, and language.
-    /// - Creates clients for interacting with Gemini API
+    /// - Creates clients for interacting with Gemini API.
     pub async fn new(
         persona: &'static str,
         behavior: &'static str,
         language: &'static str,
     ) -> Self {
-        let workspace = var("AUTOGPT_WORKSPACE")
-            .unwrap_or("workspace/".to_string())
-            .to_owned()
-            + "frontend";
+        let workspace =
+            var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace".to_string()) + "/frontend";
 
         if !fs::try_exists(&workspace).await.unwrap_or(false) {
             match fs::create_dir_all(&workspace).await {
@@ -155,93 +155,100 @@ impl FrontendGPT {
             debug!("Workspace directory '{}' already exists.", workspace);
         }
 
-        match language {
-            "rust" => {
-                let cargo_new = Command::new("cargo")
-                    .arg("init")
-                    .arg(workspace.clone())
-                    .spawn();
-
-                match cargo_new {
-                    Ok(_) => debug!("Cargo project initialized successfully!"),
-                    Err(e) => error!("Error initializing Cargo project: {}", e),
-                }
-                match fs::write(workspace.clone() + "/src/template.rs", "").await {
-                    Ok(_) => debug!("File 'template.rs' created successfully!"),
-                    Err(e) => error!("Error creating file 'template.rs': {}", e),
-                };
-            }
-            "python" => {
-                match fs::write(workspace.clone() + "/main.py", "").await {
-                    Ok(_) => debug!("File 'main.py' created successfully!"),
-                    Err(e) => error!("Error creating file 'main.py': {}", e),
-                }
-                match fs::write(workspace.clone() + "/template.py", "").await {
-                    Ok(_) => debug!("File 'template.py' created successfully!"),
-                    Err(e) => error!("Error creating file 'template.py': {}", e),
-                };
-            }
-            "javascript" => {
-                let npx_install = Command::new("npx")
-                    .arg("create-react-app")
-                    .arg(workspace.clone())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit())
-                    .spawn();
-
-                match npx_install {
-                    Ok(mut child) => match child.wait().await {
-                        Ok(status) => {
-                            if status.success() {
-                                debug!("React JS project initialized successfully!");
-                            } else {
-                                error!("Failed to initialize React JS project");
-                            }
-                        }
-                        Err(e) => {
-                            error!("Error waiting for process: {}", e);
-                        }
-                    },
-                    Err(e) => {
-                        error!("Error initializing React JS project: {}", e);
-                    }
-                }
-                match fs::write(workspace.clone() + "/src/template.js", "").await {
-                    Ok(_) => debug!("File 'template.js' created successfully!"),
-                    Err(e) => error!("Error creating file 'template.js': {}", e),
-                };
-            }
-            _ => panic!("Unsupported language, consider open an Issue/PR"),
-        };
-        #[allow(unused)]
-        let mut agent: AgentGPT = AgentGPT::new_borrowed(persona, behavior);
-        agent.id = agent.persona().to_string().into();
-
-        #[allow(unused)]
-        let client = ClientType::from_env();
-
         info!(
             "{}",
-            format!("[*] {:?}: 🛠️  Getting ready!", agent.persona(),)
+            format!("[*] {persona:?}: 🛠️  Getting ready ({language})!")
                 .bright_white()
                 .bold()
         );
 
+        let client = ClientType::from_env();
         let req_client: ReqClient = ReqClient::builder()
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
 
-        Self {
+        let mut frontend = Self {
             workspace: workspace.into(),
-            agent,
+            agent: AgentGPT::new_borrowed(persona, behavior),
             client,
             req_client,
             bugs: None,
             language,
+            entry_point: String::new(),
             nb_bugs: 0,
-        }
+        };
+        frontend.agent.id = frontend.agent.persona().to_string().into();
+
+        let current_workspace = frontend.workspace.to_string();
+        frontend.entry_point = frontend
+            .setup_environment(&current_workspace)
+            .await
+            .unwrap_or_else(|e| {
+                error!("Environment setup failed: {e}");
+                format!("{current_workspace}/main")
+            });
+
+        frontend
     }
+
+    /// Scaffolds the project directory for the requested language and returns the
+    /// path to the primary source entry file.
+    async fn setup_environment(&mut self, workspace: &str) -> Result<String> {
+        let setup_prompt = ENV_SETUP_PROMPT.replace("{LANGUAGE}", self.language);
+        let response = self.generate(&setup_prompt).await?;
+        let clean_json = strip_code_blocks(&response);
+
+        let setup: serde_json::Value = serde_json::from_str(&clean_json)
+            .map_err(|e| anyhow!("Failed to parse setup JSON: {e} | Raw: {clean_json}"))?;
+
+        let commands = setup["commands"]
+            .as_array()
+            .ok_or_else(|| anyhow!("Missing 'commands' array in setup JSON"))?;
+
+        let entry_relative = setup["entry_point"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing 'entry_point' string in setup JSON"))?;
+
+        let mut current_dir = PathBuf::from(workspace);
+        for raw_cmd in commands {
+            if let Some(cmd_str) = raw_cmd.as_str() {
+                let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+                if let Some((&executable, args)) = parts.split_first() {
+                    if executable == "cd" {
+                        if let Some(new_path) = args.first() {
+                            current_dir = current_dir.join(new_path);
+                        }
+                        continue;
+                    }
+                    match Command::new(executable)
+                        .args(args)
+                        .current_dir(&current_dir)
+                        .status()
+                        .await
+                    {
+                        Ok(s) if s.success() => debug!("setup: `{}` ok", cmd_str),
+                        Ok(s) => warn!("setup: `{}` exited {}", cmd_str, s),
+                        Err(e) => warn!("setup: `{}` failed: {}", cmd_str, e),
+                    }
+                }
+            }
+        }
+
+        let entry = format!("{workspace}/{entry_relative}");
+
+        if !Path::new(&entry).exists() {
+            if let Some(parent) = Path::new(&entry).parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            fs::write(&entry, "")
+                .await
+                .map_err(|e| anyhow!("Could not create entry file {entry}: {e}"))?;
+        }
+
+        Ok(entry)
+    }
+
     pub async fn build_request(
         &mut self,
         prompt: &str,
@@ -345,16 +352,8 @@ impl FrontendGPT {
     /// - Sends the request to the Gemini API to generate frontend code.
     /// - Writes the generated frontend code to the appropriate file.
     pub async fn generate_frontend_code(&mut self, task: &mut Task) -> Result<String> {
-        let path = self.workspace.clone();
-
-        let frontend_path = match self.language {
-            "rust" => format!("{}/{}", path, "src/template.rs"),
-            "python" => format!("{}/{}", path, "template.py"),
-            "javascript" => format!("{}/{}", path, "src/template.js"),
-            _ => panic!("Unsupported language, consider opening an Issue/PR"),
-        };
-
-        let template = fs::read_to_string(&frontend_path).await?;
+        let frontend_path = self.entry_point.clone();
+        let template = fs::read_to_string(&frontend_path).await.unwrap_or_default();
 
         let prompt = format!(
             "{}\n\nCode Template: {}\nProject Description: {}",
@@ -386,24 +385,15 @@ impl FrontendGPT {
 
         let code = match output {
             GenerationOutput::Text(code) => code,
-            _ => {
-                return Err(anyhow!("Expected text output for frontend code generation"));
-            }
+            _ => return Err(anyhow!("Expected text output for frontend code generation")),
         };
 
-        let frontend_main_path = match self.language {
-            "rust" => format!("{}/{}", path, "src/main.rs"),
-            "python" => format!("{}/{}", path, "main.py"),
-            "javascript" => format!("{}/{}", path, "src/index.js"),
-            _ => panic!("Unsupported language, consider opening an Issue/PR"),
-        };
-
-        fs::write(&frontend_main_path, &code).await?;
+        fs::write(&frontend_path, &code).await?;
 
         self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
             content: Cow::Owned(format!(
-                "Frontend code generated and saved to '{frontend_main_path}'"
+                "Frontend code generated and saved to '{frontend_path}'"
             )),
         });
 
@@ -413,7 +403,7 @@ impl FrontendGPT {
                 .save_ltm(Message {
                     role: Cow::Borrowed("assistant"),
                     content: Cow::Owned(format!(
-                        "Frontend code generated and saved to '{frontend_main_path}'"
+                        "Frontend code generated and saved to '{frontend_path}'"
                     )),
                 })
                 .await;
@@ -422,7 +412,6 @@ impl FrontendGPT {
         task.frontend_code = Some(code.clone().into());
         self.agent.update(Status::Completed);
         debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
-
         Ok(code)
     }
 
@@ -447,8 +436,6 @@ impl FrontendGPT {
     /// - Sends the request to the Gemini API to improve the frontend code.
     /// - Writes the improved frontend code to the appropriate file.
     pub async fn improve_frontend_code(&mut self, task: &mut Task) -> Result<String> {
-        let path = self.workspace.clone();
-
         self.agent.add_message(Message {
             role: Cow::Borrowed("user"),
             content: Cow::Owned(format!(
@@ -507,18 +494,12 @@ impl FrontendGPT {
             }
         };
 
-        let frontend_path = match self.language {
-            "rust" => format!("{}/{}", path, "src/main.rs"),
-            "python" => format!("{}/{}", path, "main.py"),
-            "javascript" => format!("{}/{}", path, "src/index.js"),
-            _ => panic!("Unsupported language, consider opening an Issue/PR"),
-        };
-
+        let frontend_path = self.entry_point.clone();
         fs::write(&frontend_path, &improved_code).await?;
 
         self.agent.add_message(Message {
             role: Cow::Borrowed("assistant"),
-            content: Cow::Owned(format!("Improved frontend code saved to '{frontend_path}'",)),
+            content: Cow::Owned(format!("Improved frontend code saved to '{frontend_path}'")),
         });
 
         #[cfg(feature = "mem")]
@@ -534,10 +515,8 @@ impl FrontendGPT {
         }
 
         task.frontend_code = Some(improved_code.clone().into());
-
         self.agent.update(Status::Completed);
         debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
-
         Ok(improved_code)
     }
 
@@ -562,8 +541,6 @@ impl FrontendGPT {
     /// - Sends the request to the Gemini API to fix bugs in the frontend code.
     /// - Writes the fixed frontend code to the appropriate file.
     pub async fn fix_code_bugs(&mut self, task: &mut Task) -> Result<String> {
-        let path = self.workspace.clone();
-
         let bugs_description = self
             .bugs
             .clone()
@@ -589,7 +566,6 @@ impl FrontendGPT {
         }
 
         let buggy_code = task.clone().frontend_code.unwrap_or_default();
-
         let prompt = format!(
             "{FIX_CODE_PROMPT}\n\nBuggy Code: {buggy_code}\nBugs: {bugs_description}\n\nFix all bugs."
         );
@@ -624,13 +600,7 @@ impl FrontendGPT {
             }
         };
 
-        let frontend_path = match self.language {
-            "rust" => format!("{}/{}", path, "src/main.rs"),
-            "python" => format!("{}/{}", path, "main.py"),
-            "javascript" => format!("{}/{}", path, "src/index.js"),
-            _ => panic!("Unsupported language, consider opening an Issue/PR"),
-        };
-
+        let frontend_path = self.entry_point.clone();
         fs::write(&frontend_path, &fixed_code).await?;
 
         self.agent.add_message(Message {
@@ -653,10 +623,8 @@ impl FrontendGPT {
         }
 
         task.frontend_code = Some(fixed_code.clone().into());
-
         self.agent.update(Status::Completed);
         debug!("[*] {:?}: {:?}", self.agent.persona(), self.agent);
-
         Ok(fixed_code)
     }
     pub fn think(&self) -> String {
@@ -902,9 +870,12 @@ impl FrontendGPT {
 
         Ok(())
     }
+    /// Returns a build/run child process for the current language.
     async fn run_build_command(&self, path: &str) -> Result<Child> {
-        match self.language {
-            "rust" => Ok(Command::new("timeout")
+        let lang = self.language.to_ascii_lowercase();
+
+        if lang.contains("rust") {
+            return Ok(Command::new("timeout")
                 .arg("10s")
                 .arg("cargo")
                 .arg("build")
@@ -912,119 +883,59 @@ impl FrontendGPT {
                 .current_dir(path)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .spawn()?),
+                .spawn()?);
+        }
 
-            "python" => {
-                let venv_path = format!("{path}/.venv");
-                let pip_path = format!("{venv_path}/bin/pip");
-                let venv_exists = Path::new(&venv_path).exists();
+        if lang.contains("python") {
+            let venv_path = format!("{path}/.venv");
+            let pip_path = format!("{venv_path}/bin/pip");
 
-                if !venv_exists {
-                    let create_venv = Command::new("python3")
-                        .arg("-m")
-                        .arg("venv")
-                        .arg(&venv_path)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status();
+            if !Path::new(&venv_path).exists() {
+                let status = Command::new("python3")
+                    .arg("-m")
+                    .arg("venv")
+                    .arg(&venv_path)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .await;
 
-                    if let Ok(status) = create_venv.await
-                        && status.success()
-                    {
-                        let main_py_path = format!("{path}/main.py");
-                        let main_py_content = fs::read_to_string(&main_py_path)
-                            .await
-                            .expect("Failed to read main.py");
-
-                        let mut packages = vec![];
-
-                        for line in main_py_content.lines() {
-                            if line.starts_with("from ") || line.starts_with("import ") {
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-
-                                if let Some(pkg) = parts.get(1) {
-                                    let root_pkg = pkg.split('.').next().unwrap_or(pkg);
-                                    if !packages.contains(&root_pkg) {
-                                        packages.push(root_pkg);
-                                    }
-                                }
-                            }
-                        }
-                        if !packages.is_empty() {
-                            if !packages.contains(&"uvicorn") {
-                                packages.push("uvicorn");
-                            }
-                            if !packages.contains(&"httpx") {
-                                packages.push("httpx");
-                            }
-                            for pkg in &packages {
-                                let install_status = Command::new(&pip_path)
-                                    .arg("install")
-                                    .arg(pkg)
-                                    .stdout(Stdio::null())
-                                    .stderr(Stdio::null())
-                                    .status();
-
-                                match install_status.await {
-                                    Ok(status) if status.success() => {
-                                        info!(
-                                                "{}",
-                                                format!(
-                                                    "[*] {:?}: Successfully installed Python package '{}'",
-                                                    self.agent.persona(),
-                                                    pkg
-                                                )
-                                                .bright_white()
-                                                .bold()
-                                            );
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                                "{}",
-                                                format!(
-                                                    "[*] {:?}: Failed to install Python package '{}': {}",
-                                                    self.agent.persona(),
-                                                    pkg,
-                                                    e
-                                                )
-                                                .bright_red()
-                                                .bold()
-                                            );
-                                    }
-                                    _ => {
-                                        error!(
-                                                "{}",
-                                                format!(
-                                                    "[*] {:?}: Installation of package '{}' exited with an error",
-                                                    self.agent.persona(),
-                                                    pkg
-                                                )
-                                                .bright_red()
-                                                .bold()
-                                            );
-                                    }
-                                }
-                            }
-                        }
+                if let Ok(s) = status
+                    && s.success()
+                {
+                    let entry_content = fs::read_to_string(&self.entry_point)
+                        .await
+                        .unwrap_or_default();
+                    let mut packages: Vec<&str> = entry_content
+                        .lines()
+                        .filter(|l| l.starts_with("from ") || l.starts_with("import "))
+                        .filter_map(|l| l.split_whitespace().nth(1))
+                        .map(|pkg| pkg.split('.').next().unwrap_or(pkg))
+                        .collect();
+                    packages.dedup();
+                    for pkg in &packages {
+                        let _ = Command::new(&pip_path)
+                            .arg("install")
+                            .arg(pkg)
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .await;
                     }
                 }
-
-                let run_output = Command::new("sh")
-                    .arg("-c")
-                    .arg(format!(
-                        "timeout {} '.venv/bin/python' -m uvicorn main:app --host 0.0.0.0 --port 8000",
-                        10
-                    ))
-                    .current_dir(path)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                    .expect("Failed to run the backend application");
-
-                Ok(run_output)
             }
 
-            "javascript" => Ok(Command::new("timeout")
+            return Ok(Command::new("sh")
+                .arg("-c")
+                .arg(format!("timeout 10 '{venv_path}/bin/python' -m uvicorn main:app --host 0.0.0.0 --port 8000"))
+                .current_dir(path)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?);
+        }
+
+        if lang.contains("javascript") || lang.contains("typescript") {
+            return Ok(Command::new("timeout")
                 .arg("10s")
                 .arg("npm")
                 .arg("run")
@@ -1032,10 +943,13 @@ impl FrontendGPT {
                 .current_dir(path)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .spawn()?),
-
-            _ => panic!("Unsupported language: {}", self.language),
+                .spawn()?);
         }
+
+        Err(anyhow!(
+            "No build command configured for language: {}",
+            self.language
+        ))
     }
     /// Updates the bugs found in the codebase.
     ///

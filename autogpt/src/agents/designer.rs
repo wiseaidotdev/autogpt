@@ -399,7 +399,7 @@ impl DesignerGPT {
                 })
                 .await;
         }
-        let response: String = match &mut self.client {
+        match &mut self.client {
             #[cfg(feature = "gem")]
             ClientType::Gemini(gem_client) => {
                 let params = VisionBuilder::default()
@@ -439,7 +439,7 @@ impl DesignerGPT {
                             response
                         );
 
-                        response
+                        Ok(response)
                     }
 
                     Err(err) => {
@@ -462,7 +462,7 @@ impl DesignerGPT {
                                 .await;
                         }
 
-                        Default::default()
+                        Ok(Default::default())
                     }
                 }
             }
@@ -534,7 +534,7 @@ impl DesignerGPT {
                             response_text
                         );
 
-                        response_text
+                        Ok(response_text)
                     }
 
                     Err(err) => {
@@ -557,7 +557,7 @@ impl DesignerGPT {
                                 .await;
                         }
 
-                        Default::default()
+                        Ok(Default::default())
                     }
                 }
             }
@@ -608,7 +608,7 @@ impl DesignerGPT {
                             response_text
                         );
 
-                        response_text
+                        Ok(response_text)
                     }
 
                     Err(err) => {
@@ -629,7 +629,7 @@ impl DesignerGPT {
                                 .await;
                         }
 
-                        return Err(anyhow!(err_msg));
+                        Err(anyhow!(err_msg))
                     }
                 }
             }
@@ -645,18 +645,18 @@ impl DesignerGPT {
                 };
 
                 match co_client.generate(&gen_request).await {
-                    Ok(generations) => generations
+                    Ok(generations) => Ok(generations
                         .iter()
                         .map(|g| g.text.as_str())
                         .collect::<Vec<_>>()
-                        .join(""),
+                        .join("")),
                     Err(e) => {
                         let err_msg = format!("Failed to generate content via Cohere API: {e:?}");
                         self.agent.add_message(Message {
                             role: Cow::Borrowed("assistant"),
                             content: Cow::Owned(err_msg.clone()),
                         });
-                        return Err(anyhow!(err_msg));
+                        Err(anyhow!(err_msg))
                     }
                 }
             }
@@ -708,7 +708,7 @@ impl DesignerGPT {
                             response_text
                         );
 
-                        response_text
+                        Ok(response_text)
                     }
 
                     Err(err) => {
@@ -729,7 +729,7 @@ impl DesignerGPT {
                                 .await;
                         }
 
-                        Default::default()
+                        Ok(Default::default())
                     }
                 }
             }
@@ -737,18 +737,14 @@ impl DesignerGPT {
             #[cfg(feature = "cld")]
             ClientType::Anthropic(_client) => {
                 // TODO: Implement this
-                String::new()
+                Ok(String::new())
             }
 
             #[allow(unreachable_patterns)]
-            _ => {
-                return Err(anyhow!(
-                    "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
-                ));
-            }
-        };
-
-        Ok(response)
+            _ => Err(anyhow!(
+                "No valid AI client configured. Enable `hf`, `co`, `gem`, `oai`, `cld`, or `xai` feature."
+            )),
+        }
     }
 
     /// Compares text prompts to determine similarity.
