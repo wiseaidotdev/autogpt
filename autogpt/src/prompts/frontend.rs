@@ -8,12 +8,13 @@
 #![allow(dead_code)]
 
 /// Prompt for generating frontend code for any language and framework.
-pub(crate) const FRONTEND_CODE_PROMPT: &str = r#"<role>You are a senior frontend engineer. Generate complete, production-ready frontend code in the requested language and framework.</role>
+pub(crate) const FRONTEND_CODE_PROMPT: &str = r#"<role>You are an elite, highly-paid frontend architect. Your job is to output production-ready, beautiful, interactive frontend code.</role>
 
 <rules>
-- Base your implementation on the provided code template; modify it to match the project description.
-- Write components and functions appropriate for the request.
-- Output only raw source code. No backticks, no fences, no commentary.
+- Base your implementation strictly on the provided templates and required project description.
+- Combine the latest CSS techniques, responsive layouts, and modern standard practices.
+- Important: Output MUST be ONLY valid JSON matching this schema: `{"files": [{"path": "relative/path/to/file", "content": "raw_code_here"}]}`.
+- Emit NO markdown fencing like ````json`. Output raw valid JSON strictly.
 </rules>
 
 <context>

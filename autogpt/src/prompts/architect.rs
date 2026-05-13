@@ -8,37 +8,37 @@
 #![allow(dead_code)]
 
 /// Prompt for identifying required architectural scope from a project description.
-pub(crate) const ARCHITECT_SCOPE_PROMPT: &str = r#"<role>You are a software architect. Identify which architectural capabilities a project requires.</role>
+pub(crate) const ARCHITECT_SCOPE_PROMPT: &str = r#"<role>You are a master software architect. Identify which architectural capabilities a project requires based on its description.</role>
 
-Return ONLY this JSON object (no markdown, no commentary):
-{"crud":bool,"auth":bool,"external":bool}
-
+<rules>
+- Return ONLY a valid JSON object: `{"crud": true, "auth": false, "external": true}`.
 - "crud": true if the project requires create/read/update/delete operations.
 - "auth": true if user authentication (login/logout) is required.
 - "external": true if integration with external APIs or data sources is needed.
-
-At least one field must be true.
+- At least one field must be true.
+- Do not output markdown fencing or commentary.
+</rules>
 
 <project_description>{PROJECT_DESCRIPTION}</project_description>"#;
 
 /// Prompt for selecting relevant public API endpoints for a project.
-pub(crate) const ARCHITECT_ENDPOINTS_PROMPT: &str = r#"<role>You are a software architect. Identify public API endpoints that align with the project behaviors.</role>
+pub(crate) const ARCHITECT_ENDPOINTS_PROMPT: &str = r#"<role>You are a master software architect. Identify public API endpoints that align precisely with the project behavior.</role>
 
 <rules>
-- Prioritize endpoints that do not require API keys.
-- Return a JSON array of URL strings: ["url_1", "url_2", ...]
-- Output only the JSON array. No commentary.
+- Prioritize stable endpoints that do not require API keys.
+- Return ONLY a valid JSON array of URL strings: `["url_1", "url_2"]`
+- Do not output markdown fencing or commentary.
 </rules>
 
 <project_description>{PROJECT_DESCRIPTION}</project_description>"#;
 
 /// Prompt for generating Python architecture diagrams using the diagrams library.
-pub(crate) const ARCHITECT_DIAGRAM_PROMPT: &str = r#"<role>You are a software architect. Generate Python code using the `diagrams` library to visualize the described architecture.</role>
+pub(crate) const ARCHITECT_DIAGRAM_PROMPT: &str = r#"<role>You are a software architect plotting cloud infrastructures. Generate Python scripts using the `diagrams` library to construct the project architecture diagram.</role>
 
 <rules>
-- Generate accurate, runnable Python code using the `diagrams` library.
-- Adapt the examples below to match the specific requirements.
-- Output only the Python source code. No backticks, no commentary.
+- Output ONLY the raw Python source code.
+- Provide no backticks, no markdown fencing, no commentary,.
+- Your code must be runnable without syntax errors.
 </rules>
 
 <examples>

@@ -8,23 +8,25 @@
 #![allow(dead_code)]
 
 /// Prompt for identifying the modular file structure of a monolithic source file.
-pub(crate) const MODULARIZE_PROMPT: &str = r#"<role>You are a code architect. Identify how a monolithic source file should be split into logical modules.</role>
+pub(crate) const MODULARIZE_PROMPT: &str = r#"<role>You are a surgical code architect. Divide a monolithic source file into logical nested modules.</role>
 
 <rules>
-- Return a list of new file paths, one per line, reflecting a clean modular structure.
-- Use nested folders where appropriate. Include correct file extensions.
-- No bullets, no explanations, no extra text, no backticks.
+- Output ONLY a JSON array of strings representing the new file paths: `["foo/bar.rs", "foo/baz.rs"]`.
+- The new paths must reflect a clean, standard modular structure.
+- Include proper file extensions.
+- Do not output markdown fencing, bullets, explanations or extra text.
 </rules>
 
 <source_code>{SOURCE_CODE}</source_code>"#;
 
 /// Prompt for extracting the code belonging to a specific module file from a full codebase.
-pub(crate) const SPLIT_PROMPT: &str = r#"<role>You are a code extraction engine. Write the complete, correct contents of the specified module file extracted from the provided codebase.</role>
+pub(crate) const SPLIT_PROMPT: &str = r#"<role>You are a precise code extraction engine. Extract the code belonging to a specified module from a monolithic codebase.</role>
 
 <rules>
-- Extract and write only what belongs in this specific file.
-- The code must correctly import necessary modules and function independently when imported.
-- Output only raw source code starting from the first line. No backticks, no explanations.
+- Extract only code that belongs strictly to the requested file path.
+- Include all necessary module imports and ensure the code functions independently.
+- Output ONLY the raw source code starting from the first line. 
+- Do not provide backticks, explanations, or commentary.
 </rules>
 
 <context>

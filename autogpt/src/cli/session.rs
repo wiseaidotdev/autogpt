@@ -78,6 +78,16 @@ pub struct SessionFile {
     pub action: String,
 }
 
+/// Cumulative token and request statistics for a session.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionStats {
+    pub tokens_sent: u64,
+    pub tokens_received: u64,
+    pub requests: u32,
+    pub responses: u32,
+}
+
 /// Persistent session data stored under `~/.autogpt/sessions/<id>/`.
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +107,7 @@ pub struct Session {
     pub workspace: String,
     pub reasoning_log: Vec<String>,
     pub build_attempts: u8,
+    pub stats: SessionStats,
 }
 
 #[cfg(feature = "cli")]
@@ -120,7 +131,20 @@ impl Session {
             workspace: workspace.to_string(),
             reasoning_log: Vec::new(),
             build_attempts: 0,
+            stats: SessionStats::default(),
         }
+    }
+
+    pub fn record_request(&mut self, prompt_len: usize) {
+        self.stats.tokens_sent += (prompt_len / 4).max(1) as u64;
+        self.stats.requests += 1;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn record_response(&mut self, response_len: usize) {
+        self.stats.tokens_received += (response_len / 4).max(1) as u64;
+        self.stats.responses += 1;
+        self.updated_at = Utc::now();
     }
 
     pub fn add_reasoning(&mut self, thought: &str) {
@@ -315,6 +339,9 @@ impl SessionManager {
                 .join("\n");
             fs::write(dir.join("reasoning_log.md"), reasoning_md)?;
         }
+
+        let stats_json = serde_json::to_string_pretty(&session.stats)?;
+        fs::write(dir.join("stats.json"), stats_json)?;
 
         Ok(())
     }

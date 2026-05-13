@@ -299,7 +299,7 @@ pub fn print_success(message: &str) {
     info!("{}  {}", "✓".bright_green(), message.bright_green().bold());
 }
 
-/// Renders a single labelled status bar line showing working context.
+/// Renders a single labelled status bar line showing working context and live token stats.
 #[cfg(feature = "cli")]
 pub fn print_status_bar(cwd: &str, model: &str, provider: &str) {
     info!(
@@ -308,6 +308,26 @@ pub fn print_status_bar(cwd: &str, model: &str, provider: &str) {
         model.bright_magenta(),
         provider.bright_black()
     );
+}
+
+/// Builds a compact ANSI status segment string from session stats for use in the TUI status line.
+///
+/// Format: `↑{req}req ↓{resp}res ~{tokens_sent}tk↑ ~{tokens_recv}tk↓  🌐`
+/// The web-search badge is only appended when `internet_access` is true.
+#[cfg(feature = "cli")]
+pub fn build_stats_status_segment(
+    stats: &crate::cli::session::SessionStats,
+    internet_access: bool,
+) -> String {
+    let search_badge = if internet_access {
+        "  \x1b[94m🌐 live-search\x1b[0m".to_string()
+    } else {
+        String::new()
+    };
+    format!(
+        "\x1b[36m↑{}req\x1b[0m \x1b[36m↓{}res\x1b[0m  \x1b[33m~{}tk↑\x1b[0m \x1b[32m~{}tk↓\x1b[0m{}",
+        stats.requests, stats.responses, stats.tokens_sent, stats.tokens_received, search_badge
+    )
 }
 
 /// Renders a summary table of all registered MCP servers.
