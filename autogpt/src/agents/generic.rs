@@ -1,7 +1,17 @@
+// Copyright 2026 Mahmoud Harmouch.
+//
+// Licensed under the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use crate::agents::agent::AgentGPT;
+use crate::agents::intent::AgentIntent;
+#[cfg(feature = "mop")]
+use crate::agents::mop::run_mixture;
 use crate::common::utils::{
-    Capability, ClientType, ContextManager, Knowledge, Persona, Planner, Reflection, Status, Task,
-    TaskScheduler, Tool, is_yes, strip_code_blocks,
+    ClientType, ContextManager, Knowledge, Message, Persona, Planner, Reflection, Scope, Status,
+    Task, TaskScheduler, Tool, is_yes, strip_code_blocks,
 };
 #[allow(unused_imports)]
 #[cfg(feature = "hf")]
@@ -9,31 +19,24 @@ use crate::prelude::hf_model_from_str;
 #[cfg(feature = "cli")]
 use crate::prelude::*;
 use crate::traits::agent::Agent;
+use crate::traits::functions::{AsyncFunctions, Functions, ReqResponse};
+use async_trait::async_trait;
 use auto_derive::Auto;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::{Mutex, mpsc::Receiver};
+use tracing::{error, info, warn};
 
 #[cfg(feature = "net")]
 use crate::collaboration::Collaborator;
-
-#[cfg(feature = "mop")]
-use crate::agents::mop::run_mixture;
 
 #[cfg(feature = "mem")]
 use {
     crate::common::memory::load_long_term_memory, crate::common::memory::long_term_memory_context,
     crate::common::memory::save_long_term_memory,
 };
-
-#[cfg(any(
-    feature = "co",
-    feature = "oai",
-    feature = "gem",
-    feature = "cld",
-    feature = "xai",
-    feature = "hf",
-    feature = "gpt"
-))]
-use crate::traits::functions::ReqResponse;
 
 #[cfg(feature = "cli")]
 use {
@@ -42,20 +45,22 @@ use {
     crate::cli::session::{Session, SessionManager, SessionTask, TaskStatus as SessionTaskStatus},
     crate::cli::settings::SettingsManager,
     crate::cli::skills::SkillStore,
-    crate::cli::tui::{
-        TaskStatus as TuiTaskStatus, create_spinner, print_agent_msg, print_banner, print_error,
-        print_greeting, print_section, print_success, print_task_item, print_warning,
-        render_help_table, render_markdown, render_model_selector, render_warning_box,
-    },
     crate::prompts::generic::{
         FOLLOWUP_SYNTHESIS_PROMPT, GENERIC_SYSTEM_PROMPT, IMPLEMENTATION_PLAN_PROMPT,
-        LESSON_EXTRACTION_PROMPT, REASONING_PROMPT, REFLECTION_PROMPT, STATE_SUMMARIZATION_PROMPT,
-        TASK_EXECUTION_PROMPT, TASK_SYNTHESIS_PROMPT, WALKTHROUGH_PROMPT,
+        INTENT_DETECTION_PROMPT, LESSON_EXTRACTION_PROMPT, REASONING_PROMPT, REFLECTION_PROMPT,
+        STATE_SUMMARIZATION_PROMPT, TASK_EXECUTION_PROMPT, TASK_SYNTHESIS_PROMPT,
+        WALKTHROUGH_PROMPT,
+    },
+    crate::tui::state::TuiEvent,
+    crate::tui::utils::{
+        TaskStatus as TuiTaskStatus, create_spinner, print_agent_msg, print_banner, print_error,
+        print_greeting, print_section, print_success, print_task_item, print_warning,
+        render_help_table, render_help_table_to_log, render_markdown, render_model_selector,
+        render_warning_box,
     },
     anyhow::anyhow,
     colored::Colorize,
     duckduckgo,
-    serde::{Deserialize, Serialize},
     std::env,
     std::fs,
     std::io::{self, BufRead, Write as IoWrite},
@@ -66,20 +71,32 @@ use {
     termimad::crossterm::terminal::{disable_raw_mode, enable_raw_mode},
     tokio::io::{AsyncBufReadExt, BufReader},
     tokio::process::Command,
+    tokio::sync::mpsc::UnboundedSender,
     tokio::time::{interval, sleep},
-    tracing::{error, info, warn},
 };
 
 #[cfg(all(feature = "cli", feature = "mcp"))]
 use {
     crate::cli::autogpt::commands::mcp as mcp_cmd,
-    crate::cli::tui::{render_mcp_help_entries, render_mcp_inspect, render_mcp_list},
     crate::mcp::client::McpClient,
     crate::mcp::types::McpServerInfo,
+    crate::tui::utils::{
+        render_mcp_help_entries, render_mcp_help_entries_to_log, render_mcp_inspect,
+        render_mcp_inspect_to_log, render_mcp_list, render_mcp_list_to_log,
+    },
 };
 
 #[cfg(feature = "cli")]
 const MAX_CONSECUTIVE_FAILURES: u8 = 3;
+
+#[derive(Deserialize)]
+struct IntentResponse {
+    intent: String,
+    #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
+    args: Option<serde_json::Value>,
+}
 
 /// The operational phase of the generic agent within a session lifecycle.
 #[cfg(feature = "cli")]
@@ -222,14 +239,13 @@ pub struct GenericAgent {
     pub provider: String,
     /// Whether web search (DuckDuckGo) is enabled (mirrors `--no-internet` flag inversion).
     pub internet_access: bool,
+    /// Optional sender channel for streaming events to the TUI render thread.
+    pub event_tx: Option<UnboundedSender<TuiEvent>>,
+    /// Token shared with the TUI to interrupt agent execution on `Esc`.
+    pub abort_token: Option<Arc<AtomicBool>>,
+    /// Channel for reading user input forwarded from the TUI command bar.
+    pub input_rx: Option<Arc<Mutex<Receiver<String>>>>,
 }
-
-#[cfg(feature = "cli")]
-use {
-    crate::traits::functions::{AsyncFunctions, Functions},
-    anyhow::Result,
-    async_trait::async_trait,
-};
 
 #[cfg(feature = "cli")]
 #[async_trait]
@@ -297,7 +313,14 @@ impl Executor for GenericAgent {
         task.description = format!("[AutoGPT] {prompt}").into();
 
         print_section("🔬 Synthesizing Task List");
-        let task_spinner = create_spinner("Decomposing your request into actionable tasks...");
+        self.emit_event(TuiEvent::AgentMode("Synthesizing".to_string()));
+        self.emit_event(TuiEvent::Log(
+            "🔬 Synthesizing task list from prompt...".to_string(),
+        ));
+        let task_spinner = create_spinner(
+            "Decomposing your request into actionable tasks...",
+            self.event_tx.is_some(),
+        );
 
         let workspace_snapshot = self.scan_workspace(&workspace_path).await;
 
@@ -309,11 +332,12 @@ impl Executor for GenericAgent {
             Ok(_) => {
                 task_spinner.finish_and_clear();
                 print_error("LLM returned an empty task list.");
+                self.emit_event(TuiEvent::AgentMode("Idle".to_string()));
                 return Ok(());
             }
             Err(e) => {
                 task_spinner.finish_and_clear();
-                // print_error(&format!("Task synthesis failed: {e}"));
+                self.emit_event(TuiEvent::AgentMode("Idle".to_string()));
                 return Err(e);
             }
         };
@@ -332,12 +356,26 @@ impl Executor for GenericAgent {
         session_mgr.save(&session)?;
 
         print_section("📋 Task Plan");
-        for t in &tasks {
+        let total_synth = tasks.len();
+        for (i, t) in tasks.iter().enumerate() {
             print_task_item(&t.description, TuiTaskStatus::Pending);
+            self.emit_event(TuiEvent::TaskUpdate {
+                index: i,
+                total: total_synth,
+                description: t.description.clone(),
+                status: SessionTaskStatus::Pending,
+            });
         }
 
         print_section("🏗️  Generating Implementation Plan");
-        let plan_spinner = create_spinner("Architecting a production-grade solution...");
+        self.emit_event(TuiEvent::AgentMode("Planning".to_string()));
+        self.emit_event(TuiEvent::Log(
+            "🏗️  Generating implementation plan...".to_string(),
+        ));
+        let plan_spinner = create_spinner(
+            "Architecting a production-grade solution...",
+            self.event_tx.is_some(),
+        );
 
         let plan = match self.generate_plan(&prompt, &tasks).await {
             Ok(p) => p,
@@ -352,48 +390,96 @@ impl Executor for GenericAgent {
         session.set_plan(&plan);
         session.add_message("assistant", &plan);
 
-        print_section("📑 Implementation Plan");
-        render_markdown(&plan);
+        if self.event_tx.is_none() {
+            print_section("📑 Implementation Plan");
+            render_markdown(&plan);
+        } else {
+            self.emit_event(TuiEvent::Log(format!(
+                "=== Implementation Plan ===\n{}\n===========================",
+                plan
+            )));
+        }
         session_mgr.save(&session)?;
 
-        if execute {
-            info!(
-                "{}  Approve this plan and begin execution? {} ",
-                "?".bright_cyan().bold(),
-                "(yes / no)".bright_black()
-            );
-            print!("> ");
-            io::stdout().flush()?;
-
-            let mut approval = String::new();
-            io::stdin().lock().read_line(&mut approval)?;
+        if execute && !self.yolo {
+            let approval = if let Some(rx_lock) = &self.input_rx {
+                self.emit_event(TuiEvent::Log(
+                    "❓ Approve this plan and begin execution? Type  yes  or  no  in the input bar below.".to_string(),
+                ));
+                self.emit_event(TuiEvent::AgentMode("Awaiting approval".to_string()));
+                let mut rx = rx_lock.lock().await;
+                rx.recv().await.unwrap_or_default()
+            } else {
+                info!(
+                    "{}  Approve this plan and begin execution? {} ",
+                    "?".bright_cyan().bold(),
+                    "(yes / no)".bright_black()
+                );
+                print!("> ");
+                io::stdout().flush()?;
+                let mut line = String::new();
+                io::stdin().lock().read_line(&mut line)?;
+                line
+            };
 
             if !is_yes(approval.trim()) {
-                print_warning("Plan not approved. Ready for next prompt.");
+                self.emit_event(TuiEvent::Log(
+                    "⛔ Plan not approved. Ready for next prompt.".to_string(),
+                ));
+                self.emit_event(TuiEvent::AgentMode("Idle".to_string()));
                 session.add_message("user", "Plan rejected.");
                 session_mgr.save(&session)?;
                 return Ok(());
             }
         }
-        print_section("⚙️  Executing Tasks via AutoGPT");
+        if self.event_tx.is_none() {
+            print_section("⚙️  Executing Tasks via AutoGPT");
+        }
+        self.emit_event(TuiEvent::AgentMode("Executing".to_string()));
 
         let tasks_snapshot = session.tasks.clone();
         let total = tasks_snapshot.len();
+
+        for (idx, task) in tasks_snapshot.iter().enumerate() {
+            self.emit_event(TuiEvent::TaskUpdate {
+                index: idx,
+                total,
+                description: task.description.clone(),
+                status: task.status,
+            });
+        }
 
         let mut project_summary = String::new();
 
         let mut consecutive_failures = 0;
         'task_loop: for (idx, task_item) in tasks_snapshot.iter().enumerate() {
-            print_task_item(&task_item.description, TuiTaskStatus::InProgress);
+            if self.event_tx.is_none() {
+                print_task_item(&task_item.description, TuiTaskStatus::InProgress);
+            }
             session.update_task_status(idx, SessionTaskStatus::InProgress);
             session_mgr.save(&session)?;
-
-            let exec_spinner = create_spinner(&format!(
-                "Task {}/{}: {}",
+            self.emit_event(TuiEvent::TaskUpdate {
+                index: idx,
+                total,
+                description: task_item.description.clone(),
+                status: SessionTaskStatus::InProgress,
+            });
+            self.emit_event(TuiEvent::Log(format!(
+                "⚙ [{}/{}] {}",
                 idx + 1,
                 total,
-                &task_item.description[..task_item.description.len().min(55)]
-            ));
+                task_item.description
+            )));
+
+            let exec_spinner = create_spinner(
+                &format!(
+                    "Task {}/{}: {}",
+                    idx + 1,
+                    total,
+                    &task_item.description[..task_item.description.len().min(55)]
+                ),
+                self.event_tx.is_some(),
+            );
 
             let completed_descs: Vec<String> = session
                 .tasks
@@ -427,6 +513,9 @@ impl Executor for GenericAgent {
             session.add_reasoning(&reasoning.thought);
 
             if !reasoning.thought.trim().is_empty() {
+                self.emit_event(TuiEvent::Thinking(
+                    reasoning.thought.chars().take(300).collect::<String>(),
+                ));
                 info!(
                     "  \x1b[2m> {}\x1b[0m",
                     reasoning.thought.chars().take(300).collect::<String>()
@@ -476,6 +565,12 @@ impl Executor for GenericAgent {
                             "Aborting task execution, resolve the provider issue and retry.",
                         );
                         session.update_task_status(idx, SessionTaskStatus::Failed);
+                        self.emit_event(TuiEvent::TaskUpdate {
+                            index: idx,
+                            total,
+                            description: task_item.description.clone(),
+                            status: SessionTaskStatus::Failed,
+                        });
                         let _ = session_mgr.save(&session);
                         return Err(e);
                     }
@@ -510,6 +605,7 @@ impl Executor for GenericAgent {
                 let mut backoff_success = false;
                 for attempt in 0..MAX_CONSECUTIVE_FAILURES {
                     let delay_secs = [1, 5, 10].get(attempt as usize).copied().unwrap_or(10);
+                    let sleep_duration = Duration::from_secs(delay_secs);
                     print_warning(&format!(
                         "LLM returned empty response for task {}/{} (attempt {}/{}).\
                          Retrying in {}s. Check rate limits or token quota if this persists.",
@@ -520,34 +616,40 @@ impl Executor for GenericAgent {
                         delay_secs,
                     ));
 
-                    let mut sleep_interval = interval(Duration::from_millis(150));
-                    let sleep_start = std::time::Instant::now();
-                    let sleep_duration = Duration::from_secs(delay_secs);
                     let mut aborted = false;
-                    let _ = enable_raw_mode();
-                    while sleep_start.elapsed() < sleep_duration {
-                        tokio::select! {
-                            _ = sleep_interval.tick() => {
-                                while event::poll(Duration::from_millis(0)).unwrap_or(false) {
-                                    if let Ok(Event::Key(key)) = event::read()
-                                        && (key.code == KeyCode::Esc || (key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'))) {
-                                            aborted = true;
-                                            break;
+
+                    if self.event_tx.is_some() {
+                        tokio::time::sleep(sleep_duration).await;
+                    } else {
+                        let mut sleep_interval = interval(Duration::from_millis(150));
+                        let sleep_start = std::time::Instant::now();
+                        let _ = enable_raw_mode();
+                        while sleep_start.elapsed() < sleep_duration {
+                            tokio::select! {
+                                _ = sleep_interval.tick() => {
+                                    while event::poll(Duration::from_millis(0)).unwrap_or(false) {
+                                        if let Ok(Event::Key(key)) = event::read()
+                                            && (key.code == KeyCode::Esc || (key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'))) {
+                                                aborted = true;
+                                                break;
+                                        }
                                     }
                                 }
                             }
+                            if aborted {
+                                break;
+                            }
                         }
-                        if aborted {
-                            break;
-                        }
+                        let _ = disable_raw_mode();
                     }
-                    let _ = disable_raw_mode();
                     if aborted {
                         return Err(anyhow!("User aborted execution."));
                     }
 
-                    let retry_spinner =
-                        create_spinner(&format!("Retrying task {}/{}", idx + 1, total));
+                    let retry_spinner = create_spinner(
+                        &format!("Retrying task {}/{}", idx + 1, total),
+                        self.event_tx.is_some(),
+                    );
                     let retry_result = self
                         .execute_task(
                             &prompt,
@@ -580,20 +682,35 @@ impl Executor for GenericAgent {
 
                 if !backoff_success {
                     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                        print_error(&format!(
-                            "Aborting: {} consecutive tasks produced no output. \
-                             Check your API key, model, and prompt quality.",
-                            MAX_CONSECUTIVE_FAILURES
-                        ));
+                        if self.event_tx.is_none() {
+                            print_error(&format!(
+                                "Aborting: {} consecutive tasks produced no output.",
+                                MAX_CONSECUTIVE_FAILURES
+                            ));
+                        }
                         for fi in idx..total {
                             session.update_task_status(fi, SessionTaskStatus::Failed);
+                            self.emit_event(TuiEvent::TaskUpdate {
+                                index: fi,
+                                total,
+                                description: session.tasks[fi].description.clone(),
+                                status: SessionTaskStatus::Failed,
+                            });
                         }
                         let _ = session_mgr.save(&session);
                         break 'task_loop;
                     }
 
-                    print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                    if self.event_tx.is_none() {
+                        print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                    }
                     session.update_task_status(idx, SessionTaskStatus::Failed);
+                    self.emit_event(TuiEvent::TaskUpdate {
+                        index: idx,
+                        total,
+                        description: task_item.description.clone(),
+                        status: SessionTaskStatus::Failed,
+                    });
                     let _ = session_mgr.save(&session);
                     continue 'task_loop;
                 }
@@ -614,33 +731,57 @@ impl Executor for GenericAgent {
 
                 match reflection.outcome {
                     ReflectionOutcome::Success => {
-                        print_task_item(&task_item.description, TuiTaskStatus::Completed);
+                        if self.event_tx.is_none() {
+                            print_task_item(&task_item.description, TuiTaskStatus::Completed);
+                        }
                         session.update_task_status(idx, SessionTaskStatus::Completed);
+                        self.emit_event(TuiEvent::TaskUpdate {
+                            index: idx,
+                            total,
+                            description: task_item.description.clone(),
+                            status: SessionTaskStatus::Completed,
+                        });
+                        self.emit_event(TuiEvent::Log(format!(
+                            "✓ Completed: {}",
+                            task_item.description
+                        )));
                         break;
                     }
                     ReflectionOutcome::Retry if retry_count < max_retries => {
                         retry_count += 1;
-                        print_warning(&format!(
-                            "Retry {retry_count}/{max_retries} - {}",
-                            reflection.reasoning
-                        ));
+                        if self.event_tx.is_none() {
+                            print_warning(&format!(
+                                "Retry {retry_count}/{max_retries} - {}",
+                                reflection.reasoning
+                            ));
+                        }
                         results = Vec::new();
                         for action in &reflection.corrective_actions {
-                            let r = GenericAgent::run_action(
-                                action,
-                                &workspace_path,
-                                &mut session,
-                                self.yolo,
-                                self.internet_access,
-                            )
-                            .await;
+                            let r = self
+                                .run_action(action, &workspace_path, &mut session)
+                                .await
+                                .unwrap_or_else(|e| ActionResult {
+                                    action_type: "Error".into(),
+                                    path: None,
+                                    stdout: String::new(),
+                                    stderr: e.to_string(),
+                                    success: false,
+                                });
                             results.push(r);
                         }
                     }
                     ReflectionOutcome::Retry | ReflectionOutcome::Skip => {
-                        print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                        if self.event_tx.is_none() {
+                            print_task_item(&task_item.description, TuiTaskStatus::Skipped);
+                            warn!("  ⊘  Skipped: {}", reflection.reasoning.bright_black());
+                        }
                         session.update_task_status(idx, SessionTaskStatus::Skipped);
-                        warn!("  ⊘  Skipped: {}", reflection.reasoning.bright_black());
+                        self.emit_event(TuiEvent::TaskUpdate {
+                            index: idx,
+                            total,
+                            description: task_item.description.clone(),
+                            status: SessionTaskStatus::Skipped,
+                        });
                         break;
                     }
                 }
@@ -652,12 +793,15 @@ impl Executor for GenericAgent {
         let build_succeeded = self
             .build_and_verify(&workspace_path, &mut session, 3)
             .await;
-        if !build_succeeded {
+        if !build_succeeded && self.event_tx.is_none() {
             print_warning("Build verification failed after all attempts.");
         }
 
-        print_section("📓 Generating Session Walkthrough");
-        let wt_spinner = create_spinner("Composing walkthrough document...");
+        if self.event_tx.is_none() {
+            print_section("📓 Generating Session Walkthrough");
+        }
+        let wt_spinner =
+            create_spinner("Composing walkthrough document...", self.event_tx.is_some());
 
         let tasks_status = session
             .tasks
@@ -700,7 +844,14 @@ impl Executor for GenericAgent {
         let _ = session_mgr.save(&session);
 
         print_section("📓 Session Walkthrough");
-        render_markdown(&walkthrough);
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(TuiEvent::Log(format!(
+                "=== Walkthrough ===\n{}\n===================",
+                walkthrough
+            )));
+        } else {
+            render_markdown(&walkthrough);
+        }
 
         let wt_path = session_mgr.base_dir.join("walkthrough.md");
         fs::write(&wt_path, &walkthrough)?;
@@ -730,6 +881,10 @@ impl Executor for GenericAgent {
             "AutoGPT",
             "All tasks complete. Ready for your next request.",
         );
+        self.emit_event(TuiEvent::AgentMode("Idle".to_string()));
+        self.emit_event(TuiEvent::Log(
+            "✅ All tasks complete. Ready for next request.".to_string(),
+        ));
 
         Ok(())
     }
@@ -740,10 +895,15 @@ impl GenericAgent {
     async fn generate_safe(&mut self, prompt: &str) -> anyhow::Result<String> {
         let timeout_duration = Duration::from_secs(30);
         let mut interval = interval(Duration::from_millis(150));
+        let abort_clone = self
+            .abort_token
+            .clone()
+            .unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)));
+        let is_tui_mode = self.event_tx.is_some();
         let llm_future = self.generate(prompt);
         tokio::pin!(llm_future);
 
-        let _ = enable_raw_mode();
+        let _ = (!is_tui_mode).then(enable_raw_mode);
         let res = loop {
             tokio::select! {
                 res = &mut llm_future => {
@@ -755,13 +915,18 @@ impl GenericAgent {
                 }
                 _ = interval.tick() => {
                     let mut aborted = false;
-                    while event::poll(Duration::from_millis(0)).unwrap_or(false) {
-                        if let Ok(Event::Key(key)) = event::read() {
-                            let is_abort = key.code == KeyCode::Esc ||
-                                (key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'));
-                            if is_abort {
-                                aborted = true;
-                                break;
+
+                    if abort_clone.load(Ordering::SeqCst) {
+                        aborted = true;
+                    } else if !is_tui_mode {
+                        while event::poll(Duration::from_millis(0)).unwrap_or(false) {
+                            if let Ok(Event::Key(key)) = event::read() {
+                                let is_abort = key.code == KeyCode::Esc ||
+                                    (key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'));
+                                if is_abort {
+                                    aborted = true;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -771,8 +936,15 @@ impl GenericAgent {
                 }
             }
         };
-        let _ = disable_raw_mode();
+        let _ = (!is_tui_mode).then(disable_raw_mode);
         res
+    }
+
+    /// Sends an event to the TUI render thread when connected, otherwise logs via tracing.
+    pub fn emit_event(&self, event: TuiEvent) {
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(event);
+        }
     }
 
     /// Calls the LLM and records request/response token estimates on `session.stats`.
@@ -782,9 +954,55 @@ impl GenericAgent {
         session: &mut Session,
     ) -> anyhow::Result<String> {
         session.record_request(prompt.len());
-        let response = self.generate_safe(prompt).await?;
-        session.record_response(response.len());
-        Ok(response)
+        self.emit_event(TuiEvent::IncRequest);
+        self.emit_event(TuiEvent::IncTokens {
+            sent: (prompt.len() / 4).max(1) as u64,
+            recv: 0,
+        });
+
+        let mut full_response = String::new();
+
+        if let Some(event_tx) = self.event_tx.as_ref() {
+            let tx = event_tx.clone();
+            match self.stream(prompt).await {
+                Ok(ReqResponse(Some(mut rx))) => {
+                    tx.send(TuiEvent::Log("🤖 ".to_string())).ok();
+                    while let Some(chunk) = rx.recv().await {
+                        let chunk_str: String = chunk;
+                        full_response.push_str(&chunk_str);
+                        tx.send(TuiEvent::LogAppend(chunk_str)).ok();
+                    }
+                    if full_response.is_empty() {
+                        tx.send(TuiEvent::Log(
+                            "🤖 (streaming returned empty, retrying...)".to_string(),
+                        ))
+                        .ok();
+                        match self.generate_safe(prompt).await {
+                            Ok(resp) if !resp.is_empty() => {
+                                full_response = resp.clone();
+                                tx.send(TuiEvent::Log(format!("🤖 {}", resp))).ok();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {
+                    let resp = self.generate_safe(prompt).await?;
+                    full_response = resp;
+                    tx.send(TuiEvent::Log(format!("🤖 {}", full_response))).ok();
+                }
+            }
+        } else {
+            full_response = self.generate_safe(prompt).await?;
+        }
+
+        session.record_response(full_response.len());
+        self.emit_event(TuiEvent::IncTokens {
+            sent: 0,
+            recv: (full_response.len() / 4).max(1) as u64,
+        });
+
+        Ok(full_response)
     }
 
     async fn synthesize_tasks(
@@ -804,6 +1022,7 @@ impl GenericAgent {
                 .replace("{SKILLS_CONTEXT}", skills_context)
         );
 
+        self.emit_event(TuiEvent::AgentMode("Synthesizing".to_string()));
         let raw: String = self.generate_safe(&full_prompt).await?;
 
         let numbered: Vec<SessionTask> = raw
@@ -862,6 +1081,7 @@ impl GenericAgent {
     }
 
     async fn generate_plan(&mut self, prompt: &str, tasks: &[SessionTask]) -> Result<String> {
+        self.emit_event(TuiEvent::AgentMode("Planning".to_string()));
         let task_list = tasks
             .iter()
             .enumerate()
@@ -888,6 +1108,7 @@ impl GenericAgent {
         task_total: usize,
         workspace: &str,
     ) -> ReasoningResult {
+        self.emit_event(TuiEvent::AgentMode("Reasoning".to_string()));
         let plan_lines: Vec<&str> = plan.lines().collect();
         let search_key = &task.description[..task.description.len().min(40)];
         let plan_excerpt: String = plan_lines
@@ -1017,17 +1238,25 @@ impl GenericAgent {
             execution_prompt.replace("{MCP_TOOLS}", &mcp_tools_context)
         );
 
+        self.emit_event(TuiEvent::AgentMode("Executing".to_string()));
         let raw = self.generate_and_track(&combined, session).await?;
-        let clean = crate::common::utils::strip_code_blocks(&raw);
+        let clean = strip_code_blocks(&raw);
         let actions: Vec<ActionRequest> = serde_json::from_str(clean.trim()).unwrap_or_default();
 
         spinner.finish_and_clear();
 
-        let yolo = self.yolo;
-        let internet_access = self.internet_access;
         let mut results = Vec::new();
         for action in &actions {
-            let result = Self::run_action(action, workspace, session, yolo, internet_access).await;
+            let result = self
+                .run_action(action, workspace, session)
+                .await
+                .unwrap_or_else(|e| ActionResult {
+                    action_type: "Error".into(),
+                    path: None,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                    success: false,
+                });
             let success = result.success;
             results.push(result);
             if !success {
@@ -1040,18 +1269,23 @@ impl GenericAgent {
 
     /// Dispatches a single `ActionRequest` to the appropriate operation.
     pub async fn run_action(
+        &mut self,
         action: &ActionRequest,
         workspace: &Path,
         session: &mut Session,
-        yolo: bool,
-        internet_access: bool,
-    ) -> ActionResult {
+    ) -> Result<ActionResult> {
+        let yolo = self.yolo;
+        let internet_access = self.internet_access;
         match action {
             ActionRequest::CreateDir { path } => {
                 let abs = workspace.join(path);
-                match fs::create_dir_all(&abs) {
+                Ok(match fs::create_dir_all(&abs) {
                     Ok(_) => {
-                        info!("  {} {}", "📁".bright_cyan(), path.bright_blue());
+                        if self.event_tx.is_some() {
+                            self.emit_event(TuiEvent::Log(format!("  📁 {}", path.bright_blue())));
+                        } else {
+                            info!("  {} {}", "📁".bright_cyan(), path.bright_blue());
+                        }
                         ActionResult {
                             action_type: "CreateDir".into(),
                             path: Some(path.clone()),
@@ -1067,7 +1301,7 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::CreateFile { path, content }
@@ -1080,9 +1314,13 @@ impl GenericAgent {
                 if let Some(parent) = abs.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
-                match fs::write(&abs, content) {
+                Ok(match fs::write(&abs, content) {
                     Ok(_) => {
-                        info!("  {} {}", "📄".bright_cyan(), path.bright_blue());
+                        if self.event_tx.is_some() {
+                            self.emit_event(TuiEvent::Log(format!("  📄 {}", path.bright_blue())));
+                        } else {
+                            info!("  {} {}", "📄".bright_cyan(), path.bright_blue());
+                        }
                         session.record_file(path, action_type);
                         ActionResult {
                             action_type: action_type.into(),
@@ -1099,14 +1337,18 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::ReadFile { path } => {
                 let abs = workspace.join(path);
-                match fs::read_to_string(&abs) {
+                Ok(match fs::read_to_string(&abs) {
                     Ok(content) => {
-                        info!("  {} {}", "📖".bright_cyan(), path.bright_blue());
+                        if self.event_tx.is_some() {
+                            self.emit_event(TuiEvent::Log(format!("  📖 {}", path.bright_blue())));
+                        } else {
+                            info!("  {} {}", "📖".bright_cyan(), path.bright_blue());
+                        }
                         ActionResult {
                             action_type: "ReadFile".into(),
                             path: Some(path.clone()),
@@ -1122,7 +1364,7 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::PatchFile {
@@ -1131,10 +1373,10 @@ impl GenericAgent {
                 new_text,
             } => {
                 let abs = workspace.join(path);
-                match fs::read_to_string(&abs) {
+                Ok(match fs::read_to_string(&abs) {
                     Ok(content) => {
                         if !content.contains(old_text.as_str()) {
-                            return ActionResult {
+                            return Ok(ActionResult {
                                 action_type: "PatchFile".into(),
                                 path: Some(path.clone()),
                                 stdout: String::new(),
@@ -1143,12 +1385,19 @@ impl GenericAgent {
                                      Use ReadFile first to confirm the exact text."
                                 ),
                                 success: false,
-                            };
+                            });
                         }
                         let patched = content.replacen(old_text.as_str(), new_text.as_str(), 1);
                         match fs::write(&abs, &patched) {
                             Ok(_) => {
-                                info!("  {} {}", "✏️ ".bright_cyan(), path.bright_blue());
+                                if self.event_tx.is_some() {
+                                    self.emit_event(TuiEvent::Log(format!(
+                                        "  ✏️  {}",
+                                        path.bright_blue()
+                                    )));
+                                } else {
+                                    info!("  {} {}", "✏️ ".bright_cyan(), path.bright_blue());
+                                }
                                 session.record_file(path, "PatchFile");
                                 ActionResult {
                                     action_type: "PatchFile".into(),
@@ -1174,7 +1423,7 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::AppendFile { path, content } => {
@@ -1182,19 +1431,35 @@ impl GenericAgent {
                 if let Some(parent) = abs.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
-                match fs::OpenOptions::new().create(true).append(true).open(&abs) {
-                    Ok(mut file) => match file.write_all(content.as_bytes()) {
-                        Ok(_) => {
-                            info!("  {} {}", "➕".bright_cyan(), path.bright_blue());
-                            session.record_file(path, "AppendFile");
-                            ActionResult {
+                Ok(
+                    match fs::OpenOptions::new().create(true).append(true).open(&abs) {
+                        Ok(mut file) => match file.write_all(content.as_bytes()) {
+                            Ok(_) => {
+                                if self.event_tx.is_some() {
+                                    self.emit_event(TuiEvent::Log(format!(
+                                        "  ➕ {}",
+                                        path.bright_blue()
+                                    )));
+                                } else {
+                                    info!("  {} {}", "➕".bright_cyan(), path.bright_blue());
+                                }
+                                session.record_file(path, "AppendFile");
+                                ActionResult {
+                                    action_type: "AppendFile".into(),
+                                    path: Some(path.clone()),
+                                    stdout: String::new(),
+                                    stderr: String::new(),
+                                    success: true,
+                                }
+                            }
+                            Err(e) => ActionResult {
                                 action_type: "AppendFile".into(),
                                 path: Some(path.clone()),
                                 stdout: String::new(),
-                                stderr: String::new(),
-                                success: true,
-                            }
-                        }
+                                stderr: e.to_string(),
+                                success: false,
+                            },
+                        },
                         Err(e) => ActionResult {
                             action_type: "AppendFile".into(),
                             path: Some(path.clone()),
@@ -1203,19 +1468,12 @@ impl GenericAgent {
                             success: false,
                         },
                     },
-                    Err(e) => ActionResult {
-                        action_type: "AppendFile".into(),
-                        path: Some(path.clone()),
-                        stdout: String::new(),
-                        stderr: e.to_string(),
-                        success: false,
-                    },
-                }
+                )
             }
 
             ActionRequest::ListDir { path } => {
                 let abs = workspace.to_path_buf();
-                match fs::read_dir(&abs) {
+                Ok(match fs::read_dir(&abs) {
                     Ok(entries) => {
                         let mut lines = Vec::new();
                         for entry in entries.flatten() {
@@ -1243,12 +1501,12 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::FindInFile { path, pattern } => {
                 let abs = workspace.join(path);
-                match fs::read_to_string(&abs) {
+                Ok(match fs::read_to_string(&abs) {
                     Ok(content) => {
                         let matches: Vec<String> = content
                             .lines()
@@ -1271,7 +1529,7 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::RunCommand { cmd, args, cwd } => {
@@ -1280,32 +1538,56 @@ impl GenericAgent {
                     .map(|c| workspace.join(c))
                     .unwrap_or_else(|| workspace.to_path_buf());
 
-                info!(
-                    "  {} {} {}",
-                    "⚡".bright_magenta(),
-                    cmd.bright_cyan().bold(),
-                    args.join(" ").bright_white()
-                );
+                if self.event_tx.is_some() {
+                    self.emit_event(TuiEvent::Log(format!(
+                        "  ⚡ {} {}",
+                        cmd.bright_cyan().bold(),
+                        args.join(" ").bright_white()
+                    )));
+                } else {
+                    info!(
+                        "  {} {} {}",
+                        "⚡".bright_magenta(),
+                        cmd.bright_cyan().bold(),
+                        args.join(" ").bright_white()
+                    );
+                }
 
                 if !yolo {
-                    info!(
-                        "  {} Run this command? {} ",
-                        "?".bright_cyan().bold(),
-                        "(yes / no)".bright_black()
-                    );
-                    print!("> ");
-                    let _ = std::io::stdout().flush();
-                    let mut approval = String::new();
-                    let _ = std::io::stdin().lock().read_line(&mut approval);
+                    let approval = if let Some(rx_lock) = &self.input_rx {
+                        self.emit_event(TuiEvent::Log(format!(
+                            "❓ Run this command? {} Type yes or no",
+                            cmd.bright_cyan().bold()
+                        )));
+                        self.emit_event(TuiEvent::AgentMode("Awaiting approval".to_string()));
+                        let mut rx = rx_lock.lock().await;
+                        let val = rx.recv().await.unwrap_or_default();
+                        self.emit_event(TuiEvent::AgentMode("Executing".to_string()));
+                        val
+                    } else {
+                        info!(
+                            "  {} Run this command? {} ",
+                            "?".bright_cyan().bold(),
+                            "(yes / no)".bright_black()
+                        );
+                        print!("> ");
+                        io::stdout().flush()?;
+                        let mut approval = String::new();
+                        let _ = std::io::stdin().lock().read_line(&mut approval)?;
+                        approval
+                    };
+
                     if !is_yes(approval.trim()) {
-                        return ActionResult {
+                        self.emit_event(TuiEvent::AgentMode("Executing".to_string()));
+                        return Ok(ActionResult {
                             action_type: "RunCommand".into(),
                             path: None,
                             stdout: String::new(),
                             stderr: "Command skipped by user.".into(),
                             success: false,
-                        };
+                        });
                     }
+                    self.emit_event(TuiEvent::AgentMode("Executing".to_string()));
                 }
 
                 let mut command = Command::new(cmd);
@@ -1325,74 +1607,76 @@ impl GenericAgent {
                     command.env("VIRTUAL_ENV", venv_dir.as_os_str());
                 }
 
-                match command
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(mut child) => {
-                        let stdout = child.stdout.take().expect("Failed to grab stdout");
-                        let stderr = child.stderr.take().expect("Failed to grab stderr");
+                Ok(
+                    match command
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                    {
+                        Ok(mut child) => {
+                            let stdout = child.stdout.take().expect("Failed to grab stdout");
+                            let stderr = child.stderr.take().expect("Failed to grab stderr");
 
-                        let stdout_handle = tokio::spawn(async move {
-                            let mut reader = BufReader::new(stdout).lines();
-                            let mut out = String::new();
-                            while let Ok(Some(line)) = reader.next_line().await {
-                                out.push_str(&line);
-                                out.push('\n');
-                                info!("    {}", line.bright_black());
-                            }
-                            out
-                        });
-
-                        let stderr_handle = tokio::spawn(async move {
-                            let mut reader = BufReader::new(stderr).lines();
-                            let mut err = String::new();
-                            while let Ok(Some(line)) = reader.next_line().await {
-                                err.push_str(&line);
-                                err.push('\n');
-                                error!("    {}", line.bright_red());
-                            }
-                            err
-                        });
-
-                        match child.wait().await {
-                            Ok(status) => {
-                                let stdout = stdout_handle.await.unwrap_or_default();
-                                let stderr = stderr_handle.await.unwrap_or_default();
-                                let success = status.success();
-
-                                ActionResult {
-                                    action_type: "RunCommand".into(),
-                                    path: None,
-                                    stdout,
-                                    stderr,
-                                    success,
+                            let stdout_handle = tokio::spawn(async move {
+                                let mut reader = BufReader::new(stdout).lines();
+                                let mut out = String::new();
+                                while let Ok(Some(line)) = reader.next_line().await {
+                                    out.push_str(&line);
+                                    out.push('\n');
+                                    info!("    {}", line.bright_black());
                                 }
-                            }
-                            Err(e) => {
-                                error!("  {} Command failed: {}", "✗".bright_red(), e);
-                                ActionResult {
-                                    action_type: "RunCommand".into(),
-                                    path: None,
-                                    stdout: String::new(),
-                                    stderr: e.to_string(),
-                                    success: false,
+                                out
+                            });
+
+                            let stderr_handle = tokio::spawn(async move {
+                                let mut reader = BufReader::new(stderr).lines();
+                                let mut err = String::new();
+                                while let Ok(Some(line)) = reader.next_line().await {
+                                    err.push_str(&line);
+                                    err.push('\n');
+                                    error!("    {}", line.bright_red());
+                                }
+                                err
+                            });
+
+                            match child.wait().await {
+                                Ok(status) => {
+                                    let stdout = stdout_handle.await.unwrap_or_default();
+                                    let stderr = stderr_handle.await.unwrap_or_default();
+                                    let success = status.success();
+
+                                    ActionResult {
+                                        action_type: "RunCommand".into(),
+                                        path: None,
+                                        stdout,
+                                        stderr,
+                                        success,
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("  {} Command failed: {}", "✗".bright_red(), e);
+                                    ActionResult {
+                                        action_type: "RunCommand".into(),
+                                        path: None,
+                                        stdout: String::new(),
+                                        stderr: e.to_string(),
+                                        success: false,
+                                    }
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        error!("  {} Command failed: {}", "✗".bright_red(), e);
-                        ActionResult {
-                            action_type: "RunCommand".into(),
-                            path: None,
-                            stdout: String::new(),
-                            stderr: e.to_string(),
-                            success: false,
+                        Err(e) => {
+                            error!("  {} Command failed: {}", "✗".bright_red(), e);
+                            ActionResult {
+                                action_type: "RunCommand".into(),
+                                path: None,
+                                stdout: String::new(),
+                                stderr: e.to_string(),
+                                success: false,
+                            }
                         }
-                    }
-                }
+                    },
+                )
             }
 
             ActionRequest::GitCommit { message } => {
@@ -1402,51 +1686,53 @@ impl GenericAgent {
                     .output()
                     .await;
 
-                match Command::new("git")
-                    .args(["commit", "-m", message])
-                    .current_dir(workspace)
-                    .output()
-                    .await
-                {
-                    Ok(out) => {
-                        let success = out.status.success();
-                        if success {
-                            info!("  {} git: {}", "🔖".bright_cyan(), message.bright_black());
+                Ok(
+                    match Command::new("git")
+                        .args(["commit", "-m", message])
+                        .current_dir(workspace)
+                        .output()
+                        .await
+                    {
+                        Ok(out) => {
+                            let success = out.status.success();
+                            if success {
+                                info!("  {} git: {}", "🔖".bright_cyan(), message.bright_black());
+                            }
+                            ActionResult {
+                                action_type: "GitCommit".into(),
+                                path: None,
+                                stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+                                stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+                                success,
+                            }
                         }
-                        ActionResult {
+                        Err(e) => ActionResult {
                             action_type: "GitCommit".into(),
                             path: None,
-                            stdout: String::from_utf8_lossy(&out.stdout).to_string(),
-                            stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-                            success,
-                        }
-                    }
-                    Err(e) => ActionResult {
-                        action_type: "GitCommit".into(),
-                        path: None,
-                        stdout: String::new(),
-                        stderr: e.to_string(),
-                        success: false,
+                            stdout: String::new(),
+                            stderr: e.to_string(),
+                            success: false,
+                        },
                     },
-                }
+                )
             }
 
             ActionRequest::GlobFiles { pattern } => {
                 let mut matched: Vec<String> = Vec::new();
                 Self::walk_glob(workspace, workspace, pattern, &mut matched);
                 matched.sort();
-                ActionResult {
+                Ok(ActionResult {
                     action_type: "GlobFiles".into(),
                     path: None,
                     stdout: matched.join("\n"),
                     stderr: String::new(),
                     success: true,
-                }
+                })
             }
 
             ActionRequest::MultiPatch { path, patches } => {
                 let abs = workspace.join(path);
-                match fs::read_to_string(&abs) {
+                Ok(match fs::read_to_string(&abs) {
                     Ok(original) => {
                         let mut content = original;
                         let mut applied = 0usize;
@@ -1463,13 +1749,13 @@ impl GenericAgent {
                             }
                         }
                         if let Err(e) = fs::write(&abs, &content) {
-                            return ActionResult {
+                            return Ok(ActionResult {
                                 action_type: "MultiPatch".into(),
                                 path: Some(path.clone()),
                                 stdout: String::new(),
                                 stderr: e.to_string(),
                                 success: false,
-                            };
+                            });
                         }
                         let success = errors.is_empty();
                         if success {
@@ -1496,7 +1782,7 @@ impl GenericAgent {
                         stderr: e.to_string(),
                         success: false,
                     },
-                }
+                })
             }
 
             ActionRequest::WebSearch { query } => {
@@ -1506,13 +1792,13 @@ impl GenericAgent {
                         "🌐".bright_black(),
                         query.bright_black()
                     );
-                    return ActionResult {
+                    return Ok(ActionResult {
                         action_type: "WebSearch".into(),
                         path: None,
                         stdout: String::new(),
                         stderr: "Web search disabled via --no-internet flag.".into(),
                         success: false,
-                    };
+                    });
                 }
 
                 info!(
@@ -1523,57 +1809,59 @@ impl GenericAgent {
 
                 let browser = duckduckgo::browser::Browser::new();
                 let user_agent = duckduckgo::user_agents::get("firefox").unwrap_or("Mozilla/5.0");
-                match browser
-                    .lite_search(query, "wt-wt", Some(5), user_agent)
-                    .await
-                {
-                    Ok(results) if !results.is_empty() => {
-                        let formatted = results
-                            .iter()
-                            .enumerate()
-                            .map(|(i, r)| {
-                                format!(
-                                    "{}. {}\n   {}\n   {}",
-                                    i + 1,
-                                    r.title,
-                                    r.snippet.trim(),
-                                    r.url
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n\n");
-                        info!(
-                            "  {} {} results for {:?}",
-                            "✓".bright_green(),
-                            results.len(),
-                            query
-                        );
-                        ActionResult {
-                            action_type: "WebSearch".into(),
-                            path: None,
-                            stdout: formatted,
-                            stderr: String::new(),
-                            success: true,
+                Ok(
+                    match browser
+                        .lite_search(query, "wt-wt", Some(5), user_agent)
+                        .await
+                    {
+                        Ok(results) if !results.is_empty() => {
+                            let formatted = results
+                                .iter()
+                                .enumerate()
+                                .map(|(i, r)| {
+                                    format!(
+                                        "{}. {}\n   {}\n   {}",
+                                        i + 1,
+                                        r.title,
+                                        r.snippet.trim(),
+                                        r.url
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n\n");
+                            info!(
+                                "  {} {} results for {:?}",
+                                "✓".bright_green(),
+                                results.len(),
+                                query
+                            );
+                            ActionResult {
+                                action_type: "WebSearch".into(),
+                                path: None,
+                                stdout: formatted,
+                                stderr: String::new(),
+                                success: true,
+                            }
                         }
-                    }
-                    Ok(_) => ActionResult {
-                        action_type: "WebSearch".into(),
-                        path: None,
-                        stdout: String::new(),
-                        stderr: format!("No results found for query: {query}"),
-                        success: false,
-                    },
-                    Err(e) => {
-                        warn!("  {} DuckDuckGo search failed: {}", "⚠".bright_yellow(), e);
-                        ActionResult {
+                        Ok(_) => ActionResult {
                             action_type: "WebSearch".into(),
                             path: None,
                             stdout: String::new(),
-                            stderr: e.to_string(),
+                            stderr: format!("No results found for query: {query}"),
                             success: false,
+                        },
+                        Err(e) => {
+                            warn!("  {} DuckDuckGo search failed: {}", "⚠".bright_yellow(), e);
+                            ActionResult {
+                                action_type: "WebSearch".into(),
+                                path: None,
+                                stdout: String::new(),
+                                stderr: e.to_string(),
+                                success: false,
+                            }
                         }
-                    }
-                }
+                    },
+                )
             }
 
             ActionRequest::McpCall { server, tool, args } => {
@@ -1604,7 +1892,7 @@ impl GenericAgent {
                     })
                     .await;
 
-                    match result {
+                    Ok(match result {
                         Ok(Ok(tool_result)) => {
                             info!("  {} MCP call succeeded", "✓".bright_green());
                             ActionResult {
@@ -1635,17 +1923,17 @@ impl GenericAgent {
                                 success: false,
                             }
                         }
-                    }
+                    })
                 }
                 #[cfg(not(all(feature = "cli", feature = "mcp")))]
                 {
-                    ActionResult {
+                    Ok(ActionResult {
                         action_type: "McpCall".into(),
                         path: None,
                         stdout: String::new(),
                         stderr: "MCP feature not enabled.".into(),
                         success: false,
-                    }
+                    })
                 }
             }
         }
@@ -1725,7 +2013,16 @@ impl GenericAgent {
 
         for attempt in 0..max_attempts {
             session.increment_build_attempt();
-            let result = Self::run_action(&build_action, workspace, session, true, false).await;
+            let result = self
+                .run_action(&build_action, workspace, session)
+                .await
+                .unwrap_or_else(|e| ActionResult {
+                    action_type: "BuildError".into(),
+                    path: None,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                    success: false,
+                });
 
             if result.success {
                 print_success(&format!("Build passed on attempt {}", attempt + 1));
@@ -1763,7 +2060,7 @@ impl GenericAgent {
                 serde_json::from_str(clean.trim()).unwrap_or_default();
 
             for action in &fix_actions {
-                let _ = Self::run_action(action, workspace, session, true, false).await;
+                let _ = self.run_action(action, workspace, session).await;
             }
         }
 
@@ -2051,6 +2348,20 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
         && path.len() >= prefix.len() + suffix.len()
 }
 
+/// Configuration for the generic agent loop.
+#[cfg(feature = "cli")]
+#[derive(Default)]
+pub struct GenericAgentLoopConfig {
+    pub yolo: bool,
+    pub internet_access: bool,
+    pub session_id: Option<String>,
+    pub mixture: bool,
+    pub custom_workspace: Option<String>,
+    pub event_tx: Option<UnboundedSender<TuiEvent>>,
+    pub input_rx: Option<Receiver<String>>,
+    pub abort_token: Option<Arc<AtomicBool>>,
+}
+
 /// Runs the interactive AutoGPT CLI loop.
 ///
 /// This is a thin REPL shell that:
@@ -2064,13 +2375,17 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
 /// Slash commands (`/help`, `/sessions`, `/models`, `/clear`, `/status`, `/workspace`,
 /// `/provider`) are handled here and never reach the executor.
 #[cfg(feature = "cli")]
-pub async fn run_generic_agent_loop(
-    yolo: bool,
-    internet_access: bool,
-    session_id: Option<&str>,
-    _mixture: bool,
-    custom_workspace: Option<String>,
-) -> anyhow::Result<()> {
+pub async fn run_generic_agent_loop(config: GenericAgentLoopConfig) -> anyhow::Result<()> {
+    let GenericAgentLoopConfig {
+        yolo,
+        internet_access,
+        session_id,
+        mixture: _mixture,
+        custom_workspace,
+        event_tx,
+        input_rx,
+        abort_token,
+    } = config;
     print_banner();
     print_greeting();
 
@@ -2094,7 +2409,7 @@ pub async fn run_generic_agent_loop(
 
     let mut active_session: Option<Session> = None;
 
-    if let Some(id) = session_id {
+    if let Some(id) = &session_id {
         match session_mgr.load(id) {
             Ok(session) => {
                 print_section("📂 Resuming Session");
@@ -2108,7 +2423,11 @@ pub async fn run_generic_agent_loop(
                 info!("");
                 for msg in &session.messages {
                     info!("  {}", format!("[{}]", msg.role).bright_magenta());
-                    render_markdown(&msg.content);
+                    if let Some(tx) = &event_tx {
+                        let _ = tx.send(TuiEvent::Log(format!("[{}]: {}", msg.role, msg.content)));
+                    } else {
+                        render_markdown(&msg.content);
+                    }
                 }
                 info!("");
             }
@@ -2146,18 +2465,27 @@ pub async fn run_generic_agent_loop(
     let mut available_models = provider_models(&current_provider);
     let mut current_model_idx = model_index(&available_models, &current_model);
 
+    let shared_input_rx = input_rx.map(|rx| Arc::new(tokio::sync::Mutex::new(rx)));
+
     let mut agent = GenericAgent {
         yolo,
         internet_access: settings.internet_access,
         workspace: workspace.clone(),
         model: current_model.clone(),
         provider: current_provider.clone(),
+        event_tx: event_tx.clone(),
+        abort_token: abort_token.clone(),
+        input_rx: shared_input_rx.clone(),
         ..Default::default()
     };
 
     let mut input_history: Vec<String> = Vec::new();
 
     'outer: loop {
+        let settings = SettingsManager::new().load().unwrap_or_default();
+        agent.yolo = yolo || settings.yolo;
+        agent.internet_access = internet_access && settings.internet_access;
+
         let cwd_str = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string());
@@ -2187,20 +2515,31 @@ pub async fn run_generic_agent_loop(
         );
 
         #[allow(unused_mut)]
-        let mut input = match read_line(
-            &status_line,
-            "Type your request, or /help for commands",
-            SLASH_COMMANDS,
-            &input_history,
-        ) {
-            ReadlineResult::Submit(s) => s,
-            ReadlineResult::Interrupted => {
-                print_success("Session saved. Goodbye!");
-                break;
+        let mut input = if let Some(ref rx_lock) = shared_input_rx {
+            let mut rx = rx_lock.lock().await;
+            match rx.recv().await {
+                Some(s) if s == "\x1b" => {
+                    break;
+                }
+                Some(s) => s,
+                None => break,
             }
-            ReadlineResult::Error(e) => {
-                print_error(&format!("Input error: {e}"));
-                continue;
+        } else {
+            match read_line(
+                &status_line,
+                "Type your request, or /help for commands",
+                SLASH_COMMANDS,
+                &input_history,
+            ) {
+                ReadlineResult::Submit(s) => s,
+                ReadlineResult::Interrupted => {
+                    print_success("Session saved. Goodbye!");
+                    break;
+                }
+                ReadlineResult::Error(e) => {
+                    print_error(&format!("Input error: {e}"));
+                    continue;
+                }
             }
         };
 
@@ -2232,25 +2571,16 @@ pub async fn run_generic_agent_loop(
             break;
         }
 
-        if input.eq_ignore_ascii_case("/help") {
-            render_help_table();
-            continue;
-        }
-
-        if input.eq_ignore_ascii_case("/clear") {
-            print!("\x1B[2J\x1B[1;1H");
-            io::stdout().flush()?;
-            print_banner();
-            print_greeting();
-            continue;
-        }
-
-        if input.eq_ignore_ascii_case("/workspace") {
-            info!(
-                "{} {}",
-                "Workspace:".bright_cyan(),
-                workspace.bright_white()
-            );
+        if input.starts_with('/')
+            && handle_slash_command(
+                &input,
+                &mut agent,
+                &session_mgr,
+                &workspace,
+                &mut active_session,
+            )
+            .await?
+        {
             continue;
         }
 
@@ -2258,26 +2588,40 @@ pub async fn run_generic_agent_loop(
             let cwd = env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default();
-            info!("{} {}", "Directory:".bright_cyan(), cwd.bright_white());
-            info!(
-                "{} {}",
-                "Model:".bright_cyan(),
-                current_model.bright_magenta()
-            );
-            info!(
-                "{} {}",
-                "Provider:".bright_cyan(),
-                current_provider.bright_white()
-            );
-            info!(
-                "{} {}",
-                "Workspace:".bright_cyan(),
-                workspace.bright_white()
-            );
+            if let Some(tx) = &event_tx {
+                let _ = tx.send(TuiEvent::Log(format!("Directory: {}", cwd)));
+                let _ = tx.send(TuiEvent::Log(format!("Model: {}", current_model)));
+                let _ = tx.send(TuiEvent::Log(format!("Provider: {}", current_provider)));
+                let _ = tx.send(TuiEvent::Log(format!("Workspace: {}", workspace)));
+            } else {
+                info!("{} {}", "Directory:".bright_cyan(), cwd.bright_white());
+                info!(
+                    "{} {}",
+                    "Model:".bright_cyan(),
+                    current_model.bright_magenta()
+                );
+                info!(
+                    "{} {}",
+                    "Provider:".bright_cyan(),
+                    current_provider.bright_white()
+                );
+                info!(
+                    "{} {}",
+                    "Workspace:".bright_cyan(),
+                    workspace.bright_white()
+                );
+            }
             continue;
         }
 
         if input.eq_ignore_ascii_case("/provider") {
+            if let Some(tx) = &event_tx {
+                let _ = tx.send(TuiEvent::Log(
+                    "Please use the 'Settings' tab (4) to manage providers and models in TUI mode."
+                        .to_string(),
+                ));
+                continue;
+            }
             let providers = ["gemini", "openai", "anthropic", "xai", "cohere"];
             info!("");
             info!("{}", "Select Provider:".bright_cyan().bold());
@@ -2299,9 +2643,9 @@ pub async fn run_generic_agent_loop(
             }
             info!("");
             print!("> Enter number: ");
-            io::stdout().flush()?;
+            let _ = io::stdout().flush();
             let mut pick = String::new();
-            io::stdin().lock().read_line(&mut pick)?;
+            let _ = io::stdin().lock().read_line(&mut pick);
             if let (Ok(n), current_len) = (pick.trim().parse::<usize>(), providers.len())
                 && n >= 1
                 && n <= current_len
@@ -2320,6 +2664,13 @@ pub async fn run_generic_agent_loop(
         }
 
         if input.eq_ignore_ascii_case("/models") {
+            if let Some(tx) = &event_tx {
+                let _ = tx.send(TuiEvent::Log(
+                    "Please use the 'Settings' tab (4) to manage your model in TUI mode."
+                        .to_string(),
+                ));
+                continue;
+            }
             if available_models.is_empty() {
                 print_warning(
                     "No models available for the current provider. Try setting the appropriate API key.",
@@ -2375,6 +2726,74 @@ pub async fn run_generic_agent_loop(
         });
         let skills_context = skills.to_prompt_context();
 
+        if active_session.is_none() {
+            let ws_snapshot = {
+                let wp = PathBuf::from(&workspace);
+                agent.scan_workspace(&wp).await
+            };
+
+            agent.emit_event(TuiEvent::AgentMode("Classifying".to_string()));
+
+            let intent_prompt = INTENT_DETECTION_PROMPT
+                .replace("{USER_PROMPT}", &input)
+                .replace("{WORKSPACE}", &ws_snapshot)
+                .replace(
+                    "{MCP_TOOLS}",
+                    "list_dir, read_file, search_web, run_command",
+                );
+
+            let intent: AgentIntent = agent
+                .generate_safe(&intent_prompt)
+                .await
+                .ok()
+                .and_then(|raw| {
+                    let clean = strip_code_blocks(&raw);
+                    serde_json::from_str::<IntentResponse>(clean.trim())
+                        .ok()
+                        .map(|p| match p.intent.as_str() {
+                            "direct_answer" => AgentIntent::DirectAnswer,
+                            "tool_call" => AgentIntent::ToolCall {
+                                tool: p.tool.unwrap_or_else(|| "list_dir".to_string()),
+                                args: p.args.unwrap_or(serde_json::Value::Null),
+                            },
+                            _ => AgentIntent::TaskPlan,
+                        })
+                })
+                .unwrap_or(AgentIntent::TaskPlan);
+
+            match intent {
+                AgentIntent::DirectAnswer => {
+                    agent.emit_event(TuiEvent::AgentMode("Answering".to_string()));
+                    // agent.emit_event(TuiEvent::Log("💬 Direct answer. Responding without task planning.".to_string()));
+                    let resp = if let Some(ref mut sess) = active_session {
+                        agent
+                            .generate_and_track(&input, sess)
+                            .await
+                            .unwrap_or_else(|_| {
+                                "Sorry, I couldn't generate a response.".to_string()
+                            })
+                    } else {
+                        agent.generate_safe(&input).await.unwrap_or_default()
+                    };
+                    agent.emit_event(TuiEvent::Log(format!(
+                        "🤖 {}",
+                        resp.chars().take(500).collect::<String>()
+                    )));
+                    agent.emit_event(TuiEvent::AgentMode("Idle".to_string()));
+                    if agent.event_tx.is_none() {
+                        render_markdown(&resp);
+                    }
+                    continue;
+                }
+                AgentIntent::ToolCall { tool: _, args: _ } => {
+                    agent.emit_event(TuiEvent::AgentMode("Tool".to_string()));
+                    // agent.emit_event(TuiEvent::Log(format!("🔧 Tool: {}. Routing to task planning.", tool)));
+                    agent.emit_event(TuiEvent::AgentMode("Idle".to_string()));
+                }
+                AgentIntent::TaskPlan => { /* continue */ }
+            }
+        }
+
         if let Some(ref prior) = active_session {
             let snapshot = agent.scan_workspace(&workspace_path).await;
             let tasks = match agent
@@ -2397,18 +2816,37 @@ pub async fn run_generic_agent_loop(
                 print_task_item(&t.description, TuiTaskStatus::Pending);
             }
 
-            if !yolo {
-                info!(
-                    "{}  Approve and execute these tasks? {} ",
-                    "?".bright_cyan().bold(),
-                    "(yes / no)".bright_black()
-                );
-                print!("> ");
-                io::stdout().flush()?;
-                let mut approval = String::new();
-                io::stdin().lock().read_line(&mut approval)?;
+            if !agent.yolo {
+                let approval = if let Some(ref rx_lock) = shared_input_rx {
+                    agent.emit_event(TuiEvent::Log(
+                        "❓ Approve follow-up tasks and begin execution? Type  yes  or  no"
+                            .to_string(),
+                    ));
+                    agent.emit_event(TuiEvent::AgentMode("Awaiting approval".to_string()));
+                    let mut rx = rx_lock.lock().await;
+                    let val = rx.recv().await.unwrap_or_default();
+                    agent.emit_event(TuiEvent::AgentMode("Executing".to_string()));
+                    val
+                } else {
+                    info!(
+                        "{}  Approve and execute these tasks? {} ",
+                        "?".bright_cyan().bold(),
+                        "(yes / no)".bright_black()
+                    );
+                    print!("> ");
+                    io::stdout().flush()?;
+                    let mut approval = String::new();
+                    io::stdin().lock().read_line(&mut approval)?;
+                    approval
+                };
                 if !is_yes(approval.trim()) {
                     print_warning("Tasks not approved.");
+                    if agent.event_tx.is_some() {
+                        agent.emit_event(TuiEvent::Log(
+                            "⛔ Follow-up tasks not approved.".to_string(),
+                        ));
+                        agent.emit_event(TuiEvent::AgentMode("Idle".to_string()));
+                    }
                     continue;
                 }
             }
@@ -2435,6 +2873,12 @@ pub async fn run_generic_agent_loop(
             for (idx, task_item) in tasks_snap.iter().enumerate() {
                 print_task_item(&task_item.description, TuiTaskStatus::InProgress);
                 new_session.update_task_status(idx, SessionTaskStatus::InProgress);
+                agent.emit_event(TuiEvent::TaskUpdate {
+                    index: idx,
+                    total,
+                    description: task_item.description.clone(),
+                    status: SessionTaskStatus::InProgress,
+                });
 
                 let completed_descs: Vec<String> = tasks_snap
                     .iter()
@@ -2451,12 +2895,15 @@ pub async fn run_generic_agent_loop(
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                let exec_spinner = create_spinner(&format!(
-                    "Task {}/{}: {}",
-                    idx + 1,
-                    total,
-                    &task_item.description[..task_item.description.len().min(55)]
-                ));
+                let exec_spinner = create_spinner(
+                    &format!(
+                        "Task {}/{}: {}",
+                        idx + 1,
+                        total,
+                        &task_item.description[..task_item.description.len().min(55)]
+                    ),
+                    agent.event_tx.is_some(),
+                );
 
                 let reasoning = agent
                     .reason_about_task(
@@ -2515,6 +2962,12 @@ pub async fn run_generic_agent_loop(
                                 "Aborting follow-up tasks, resolve the provider issue and retry.",
                             );
                             new_session.update_task_status(idx, SessionTaskStatus::Failed);
+                            agent.emit_event(TuiEvent::TaskUpdate {
+                                index: idx,
+                                total,
+                                description: task_item.description.clone(),
+                                status: SessionTaskStatus::Failed,
+                            });
                             session_mgr.save(&new_session)?;
                             active_session = Some(new_session);
                             continue 'outer;
@@ -2546,10 +2999,22 @@ pub async fn run_generic_agent_loop(
                     ReflectionOutcome::Success => {
                         print_task_item(&task_item.description, TuiTaskStatus::Completed);
                         new_session.update_task_status(idx, SessionTaskStatus::Completed);
+                        agent.emit_event(TuiEvent::TaskUpdate {
+                            index: idx,
+                            total,
+                            description: task_item.description.clone(),
+                            status: SessionTaskStatus::Completed,
+                        });
                     }
                     _ => {
                         print_task_item(&task_item.description, TuiTaskStatus::Skipped);
                         new_session.update_task_status(idx, SessionTaskStatus::Skipped);
+                        agent.emit_event(TuiEvent::TaskUpdate {
+                            index: idx,
+                            total,
+                            description: task_item.description.clone(),
+                            status: SessionTaskStatus::Skipped,
+                        });
                     }
                 }
 
@@ -2565,52 +3030,97 @@ pub async fn run_generic_agent_loop(
             continue;
         }
 
-        let arc_agent: Arc<Mutex<Box<dyn AgentFunctions>>> =
-            Arc::new(Mutex::new(Box::new(agent.clone())));
-
-        let autogpt = AutoGPT::default()
-            .execute(!yolo)
-            .max_tries(2)
-            .with(vec![arc_agent])
-            .build()
-            .expect("Failed to build AutoGPT");
-
-        let mut interrupt_handle = tokio::spawn(async move {
-            loop {
-                if matches!(event::poll(Duration::from_millis(100)), Ok(true))
-                    && let Ok(Event::Key(key)) = event::read()
-                    && key.code == KeyCode::Esc
-                {
-                    return;
+        if agent.event_tx.is_some() {
+            let mut task = Task {
+                description: input.clone().into(),
+                scope: Some(Scope {
+                    crud: true,
+                    auth: false,
+                    external: true,
+                }),
+                urls: None,
+                frontend_code: None,
+                backend_code: None,
+                api_schema: None,
+            };
+            let current_yolo = agent.yolo;
+            match Executor::execute(&mut agent, &mut task, !current_yolo, false, 2).await {
+                Ok(_) => {
+                    if let Ok(entries) = session_mgr.list()
+                        && let Some(entry) = entries.first()
+                        && let Ok(s) = session_mgr.load(&entry.id)
+                    {
+                        active_session = Some(s);
+                    }
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        });
-
-        tokio::select! {
-            res = autogpt.run() => {
-                interrupt_handle.abort();
-                match res {
-                    Ok(msg) => {
-                        info!("{}", msg.bright_green());
-                        if let Ok(entries) = session_mgr.list()
-                            && let Some(entry) = entries.first()
-                                && let Ok(s) = session_mgr.load(&entry.id) {
-                                    active_session = Some(s);
-                            }
+                Err(e) if e.to_string().contains("User aborted") => {
+                    agent.emit_event(TuiEvent::Log("⚠ Execution interrupted.".to_string()));
+                    agent.emit_event(TuiEvent::AgentMode("Idle".to_string()));
+                    if let Some(ref tok) = abort_token {
+                        tok.store(false, Ordering::SeqCst);
                     }
-                    Err(e) if e.to_string().contains("User aborted execution") => {
-                        print_warning("Execution interrupted by user (ESC pressed).");
-                        continue 'outer;
-                    }
-                    Err(e) => {
-                        print_error(&format!("Agent error: {e}"));
-                    },
+                    continue 'outer;
+                }
+                Err(e) => {
+                    agent.emit_event(TuiEvent::Log(format!("✗ Agent error: {e}")));
+                    agent.emit_event(TuiEvent::AgentMode("Idle".to_string()));
                 }
             }
-            _ = &mut interrupt_handle => {
-                print_warning("Execution interrupted by user (ESC pressed).");
-                continue 'outer;
+        } else {
+            let arc_agent: Arc<Mutex<Box<dyn AgentFunctions>>> =
+                Arc::new(Mutex::new(Box::new(agent.clone())));
+
+            let autogpt = AutoGPT::default()
+                .execute(!agent.yolo)
+                .max_tries(2)
+                .with(vec![arc_agent])
+                .build()
+                .expect("Failed to build AutoGPT");
+
+            let tok_clone = abort_token.clone();
+            let tui_mode = event_tx.is_some();
+            let mut interrupt_handle = tokio::spawn(async move {
+                loop {
+                    if let Some(tok) = &tok_clone {
+                        if tok.load(Ordering::SeqCst) {
+                            return;
+                        }
+                    } else if !tui_mode
+                        && matches!(event::poll(Duration::from_millis(100)), Ok(true))
+                        && let Ok(Event::Key(key)) = event::read()
+                        && key.code == KeyCode::Esc
+                    {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            });
+
+            tokio::select! {
+                res = autogpt.run() => {
+                    interrupt_handle.abort();
+                    match res {
+                        Ok(msg) => {
+                            info!("{}", msg.bright_green());
+                            if let Ok(entries) = session_mgr.list()
+                                && let Some(entry) = entries.first()
+                                    && let Ok(s) = session_mgr.load(&entry.id) {
+                                        active_session = Some(s);
+                                }
+                        }
+                        Err(e) if e.to_string().contains("User aborted execution") => {
+                            print_warning("Execution interrupted by user (ESC pressed).");
+                            continue 'outer;
+                        }
+                        Err(e) => {
+                            print_error(&format!("Agent error: {e}"));
+                        },
+                    }
+                }
+                _ = &mut interrupt_handle => {
+                    print_warning("Execution interrupted by user (ESC pressed).");
+                    continue 'outer;
+                }
             }
         }
     }
@@ -2631,19 +3141,29 @@ pub async fn handle_slash_command(
     active_session: &mut Option<Session>,
 ) -> Result<bool> {
     if input.eq_ignore_ascii_case("/help") {
-        render_help_table();
+        if let Some(tx) = &_agent.event_tx {
+            render_help_table_to_log(tx);
+        } else {
+            render_help_table();
+        }
         return Ok(true);
     }
 
     if input.eq_ignore_ascii_case("/clear") {
-        print!("{}[2J{}[1;1H", 27 as char, 27 as char);
-        print_banner();
+        if let Some(tx) = &_agent.event_tx {
+            let _ = tx.send(TuiEvent::ClearLog);
+        } else {
+            print!("{}[2J{}[1;1H", 27 as char, 27 as char);
+            print_banner();
+        }
         return Ok(true);
     }
 
     if input.eq_ignore_ascii_case("/workspace") {
-        print_section("📂 Current Workspace");
-        info!("  {} {}", "▸".bright_cyan(), workspace.white().bold());
+        if _agent.event_tx.is_none() {
+            print_section("📂 Current Workspace");
+            info!("  {} {}", "▸".bright_cyan(), workspace.white().bold());
+        }
         return Ok(true);
     }
 
@@ -2676,52 +3196,65 @@ pub async fn handle_slash_command(
     if input.eq_ignore_ascii_case("/sessions") {
         match session_mgr.list() {
             Ok(entries) if !entries.is_empty() => {
-                print_section("📁 Recent Sessions");
-                for (i, entry) in entries.iter().enumerate() {
-                    info!(
-                        "  {} {} {} {}",
-                        format!("{}.", i + 1).bright_cyan(),
-                        entry.title.white().bold(),
-                        format!("({}/{})", entry.completed_count, entry.task_count).bright_green(),
-                        entry
-                            .updated_at
-                            .format("%Y-%m-%d %H:%M")
-                            .to_string()
-                            .bright_black()
-                    );
-                    info!("     {} {}", "↳".bright_black(), entry.id.bright_black());
-                }
-                info!("");
-                print!("> Enter number to resume (or press Enter to skip): ");
-                io::stdout().flush()?;
-
-                let mut pick = String::new();
-                io::stdin().lock().read_line(&mut pick)?;
-                let pick = pick.trim();
-
-                if let Some(entry) = pick.parse::<usize>().ok().and_then(|n| {
-                    if n >= 1 && n <= entries.len() {
-                        Some(&entries[n - 1])
-                    } else {
-                        None
-                    }
-                }) {
-                    match session_mgr.load(&entry.id) {
-                        Ok(s) => {
-                            print_section("📂 Resumed Session");
-                            info!("  {} {}", "▸".bright_cyan(), s.title.white().bold());
-                            for msg in &s.messages {
-                                info!("  {}", format!("[{}]", msg.role).bright_magenta());
-                                render_markdown(&msg.content);
-                            }
-                            *active_session = Some(s);
-                        }
-                        Err(e) => print_error(&format!("Failed to load session: {e}")),
+                if let Some(tx) = &_agent.event_tx {
+                    tx.send(TuiEvent::Log("📁 Recent Sessions:".to_string()))
+                        .ok();
+                    let sessions_for_picker: Vec<(String, String, String)> = entries
+                        .iter()
+                        .enumerate()
+                        .map(|(i, entry)| {
+                            let label = format!(
+                                "  {}. {} ({}/{}) {}",
+                                i + 1,
+                                entry.title,
+                                entry.completed_count,
+                                entry.task_count,
+                                entry.updated_at.format("%Y-%m-%d %H:%M")
+                            );
+                            tx.send(TuiEvent::Log(label)).ok();
+                            (
+                                entry.id.clone(),
+                                entry.title.clone(),
+                                format!("{}/{}", entry.completed_count, entry.task_count),
+                            )
+                        })
+                        .collect();
+                    tx.send(TuiEvent::SessionsPick(sessions_for_picker)).ok();
+                } else {
+                    print_section("📁 Recent Sessions");
+                    for (i, entry) in entries.iter().enumerate() {
+                        info!(
+                            "  {} {} {} {}",
+                            format!("{}.", i + 1).bright_cyan(),
+                            entry.title.white().bold(),
+                            format!("({}/{})", entry.completed_count, entry.task_count)
+                                .bright_green(),
+                            entry
+                                .updated_at
+                                .format("%Y-%m-%d %H:%M")
+                                .to_string()
+                                .bright_black()
+                        );
+                        info!("     {} {}", "↳".bright_black(), entry.id.bright_black());
                     }
                 }
             }
-            Ok(_) => print_warning("No previous sessions found."),
-            Err(e) => print_error(&format!("Failed to list sessions: {e}")),
+            Ok(_) => {
+                if let Some(tx) = &_agent.event_tx {
+                    tx.send(TuiEvent::Log("No previous sessions found.".to_string()))
+                        .ok();
+                } else {
+                    print_warning("No previous sessions found.");
+                }
+            }
+            Err(e) => {
+                if let Some(tx) = &_agent.event_tx {
+                    tx.send(TuiEvent::Log(format!("Failed to list sessions: {e}")))
+                        .ok();
+                } else {
+                    print_error(&format!("Failed to list sessions: {e}"));
+                }
+            }
         }
         return Ok(true);
     }
@@ -2758,9 +3291,20 @@ pub async fn handle_slash_command(
                             })
                             .await
                             .unwrap();
-                            render_mcp_list(&infos);
+                            if let Some(tx) = &_agent.event_tx {
+                                render_mcp_list_to_log(tx, &infos);
+                            } else {
+                                render_mcp_list(&infos);
+                            }
                         }
-                        Err(e) => print_error(&format!("Failed to load settings: {e}")),
+                        Err(e) => {
+                            if let Some(tx) = &_agent.event_tx {
+                                tx.send(TuiEvent::Log(format!("Failed to load settings: {e}")))
+                                    .ok();
+                            } else {
+                                print_error(&format!("Failed to load settings: {e}"));
+                            }
+                        }
                     }
                 }
                 ["/mcp", "inspect", name] => {
@@ -2770,6 +3314,7 @@ pub async fn handle_slash_command(
                             if let Some(config) = settings.mcp.get(*name) {
                                 let config = config.clone();
                                 let name_str = name.to_string();
+                                let tx_clone = _agent.event_tx.clone();
                                 tokio::task::spawn_blocking(move || {
                                     let mut config = config.clone();
                                     if config.timeout_ms > 60000 {
@@ -2779,18 +3324,37 @@ pub async fn handle_slash_command(
                                     let _ = client.connect(&config);
                                     let desc = config.description.clone().unwrap_or_default();
                                     let info = client.to_server_info(&desc);
-                                    render_mcp_inspect(&info, &config);
+                                    if let Some(tx) = &tx_clone {
+                                        render_mcp_inspect_to_log(tx, &info, &config);
+                                    } else {
+                                        render_mcp_inspect(&info, &config);
+                                    }
                                 })
                                 .await
                                 .unwrap();
                             } else {
-                                print_warning(&format!(
-                                    "MCP server '{}' not found. Run `/mcp list` to see all.",
-                                    name
-                                ));
+                                if let Some(tx) = &_agent.event_tx {
+                                    tx.send(TuiEvent::Log(format!(
+                                        "MCP server '{}' not found.",
+                                        name
+                                    )))
+                                    .ok();
+                                } else {
+                                    print_warning(&format!(
+                                        "MCP server '{}' not found. Run `/mcp list` to see all.",
+                                        name
+                                    ));
+                                }
                             }
                         }
-                        Err(e) => print_error(&format!("Failed to load settings: {e}")),
+                        Err(e) => {
+                            if let Some(tx) = &_agent.event_tx {
+                                tx.send(TuiEvent::Log(format!("Failed to load settings: {e}")))
+                                    .ok();
+                            } else {
+                                print_error(&format!("Failed to load settings: {e}"));
+                            }
+                        }
                     }
                 }
                 ["/mcp", "remove", name] => {
@@ -2816,26 +3380,90 @@ pub async fn handle_slash_command(
                         print_error(&format!("Failed to call tool: {e}"));
                     }
                 }
-                ["/mcp", "help"] => {
-                    render_mcp_help_entries();
-                }
                 _ => {
-                    render_mcp_help_entries();
+                    if let Some(tx) = &_agent.event_tx {
+                        render_mcp_help_entries_to_log(tx);
+                    } else {
+                        render_mcp_help_entries();
+                    }
                 }
             }
         }
         #[cfg(not(any(feature = "cli", feature = "mcp")))]
         {
-            print_warning("MCP support requires the `mcp` or `cli` feature.");
+            if let Some(tx) = &_agent.event_tx {
+                tx.send(TuiEvent::Log(
+                    "MCP support requires the `mcp` or `cli` feature.".to_string(),
+                ))
+                .ok();
+            } else {
+                print_warning("MCP support requires the `mcp` or `cli` feature.");
+            }
+        }
+        return Ok(true);
+    }
+
+    if input.starts_with("/resume ") {
+        let session_id = input.trim_start_matches("/resume ").trim();
+        if session_id.is_empty() {
+            if let Some(tx) = &_agent.event_tx {
+                tx.send(TuiEvent::Log("Usage: /resume <session-id>".to_string()))
+                    .ok();
+            } else {
+                print_warning("Usage: /resume <session-id>");
+            }
+            return Ok(true);
+        }
+        match session_mgr.load(session_id) {
+            Ok(session) => {
+                let msg = format!(
+                    "📂 Resuming: {} ({} tasks)",
+                    session.title,
+                    session.tasks.len()
+                );
+                if let Some(tx) = &_agent.event_tx {
+                    tx.send(TuiEvent::Log(msg)).ok();
+                    let total = session.tasks.len();
+                    for (i, t) in session.tasks.iter().enumerate() {
+                        tx.send(TuiEvent::TaskUpdate {
+                            index: i,
+                            total,
+                            description: t.description.clone(),
+                            status: t.status,
+                        })
+                        .ok();
+                    }
+                    tx.send(TuiEvent::AgentMode("Idle".to_string())).ok();
+                } else {
+                    print_section(&msg);
+                }
+                *active_session = Some(session);
+            }
+            Err(e) => {
+                if let Some(tx) = &_agent.event_tx {
+                    tx.send(TuiEvent::Log(format!("✗ Could not load session: {e}")))
+                        .ok();
+                } else {
+                    print_error(&format!("Could not load session '{session_id}': {e}"));
+                }
+            }
         }
         return Ok(true);
     }
 
     if input.starts_with('/') {
-        print_warning(&format!(
-            "Unknown command: `{}`. Type /help for available commands.",
-            input
-        ));
+        if let Some(tx) = &_agent.event_tx {
+            tx.send(TuiEvent::Log(format!(
+                "Unknown command: `{}`. Type /help for available commands.",
+                input
+            )))
+            .ok();
+        } else {
+            print_warning(&format!(
+                "Unknown command: `{}`. Type /help for available commands.",
+                input
+            ));
+        }
         return Ok(true);
     }
 

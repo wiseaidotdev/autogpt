@@ -5,15 +5,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub mod autogpt;
-#[cfg(feature = "cli")]
-pub mod models;
-pub mod orchgpt;
-#[cfg(feature = "cli")]
-pub mod readline;
-#[cfg(feature = "cli")]
-pub mod session;
-#[cfg(feature = "cli")]
+pub mod analytics;
+pub mod main;
+pub mod prompts;
 pub mod settings;
-#[cfg(feature = "cli")]
-pub mod skills;
+pub mod theme;

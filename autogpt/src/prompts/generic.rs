@@ -42,7 +42,7 @@ pub(crate) const TASK_SYNTHESIS_PROMPT: &str = r#"<role>You are AutoGPT's task s
 <rules>
 1. OUTPUT FORMAT: Plain numbered list only. One specific action sentence per item. No sub-bullets, headers, or commentary.
 2. ORDERING: For code projects: scaffolding → config → data models → business logic → API routes → tests → docs. For other requests: logical dependency order.
-3. GRANULARITY: Each task represents ~30–90 minutes of focused work.
+3. GRANULARITY: Each task represents ~30-90 minutes of focused work.
 4. COUNT: Between 4 and 12 tasks. Never fewer, never more.
 5. SPECIFICITY: Include technology names, framework names, and file names. Bad: "Set up the backend." Good: "Create FastAPI entry point in `app/main.py` with CORS middleware and health check endpoint."
 6. WORKSPACE AWARENESS: If a workspace snapshot is provided, do NOT re-create existing files or directories.
@@ -306,4 +306,39 @@ pub(crate) const STATE_SUMMARIZATION_PROMPT: &str = r#"<role>You are AutoGPT's c
 <context>
 <original_prompt>{PROMPT}</original_prompt>
 <completed_tasks>{COMPLETED_TASKS}</completed_tasks>
+</context>"#;
+
+/// Prompt for classifying user intent before entering the main agent loop.
+///
+/// The output determines which execution mode is activated:
+/// - `direct_answer`: one-shot LLM response, no task planning.
+/// - `tool_call`: invoke a specific built-in or MCP tool, then optionally summarize.
+/// - `task_plan`: full pipeline (synthesize → plan → approve → execute → reflect).
+pub const INTENT_DETECTION_PROMPT: &str = r#"<role>You are AutoGPT's intent classifier. Analyse the user's message and output ONE of the three modes below. Be concise and accurate.</role>
+
+<modes>
+- "direct_answer": The user is asking a question, requesting an explanation, analysis, summary, math problem, or a description of existing content. No file creation or command execution is required.
+- "tool_call": The user wants to inspect the workspace, read a file, list files, run a quick command, or search the web to gather information, but is NOT asking to build/create/install anything. Select the most appropriate tool.
+- "task_plan": The user wants to create, build, install, configure, refactor, or substantially modify files or a project. This is the default for any creative or constructive request.
+</modes>
+
+<tools_available>
+- list_dir: List files/directories. args: {"path": "."}
+- read_file: Read file contents. args: {"path": "rel/path/to/file"}
+- run_command: Run a shell command. args: {"cmd": "...", "args": [...]}
+- web_search: Search the web. args: {"query": "..."}
+{MCP_TOOLS}
+</tools_available>
+
+<rules>
+1. Output ONLY the JSON object below. No markdown, no commentary.
+2. For "direct_answer": {"intent":"direct_answer"}
+3. For "tool_call": {"intent":"tool_call","tool":"<tool_name>","args":{<tool_args>}}
+4. For "task_plan": {"intent":"task_plan"}
+5. When in doubt, use "task_plan".
+</rules>
+
+<context>
+<user_message>{USER_PROMPT}</user_message>
+<workspace_snapshot>{WORKSPACE}</workspace_snapshot>
 </context>"#;

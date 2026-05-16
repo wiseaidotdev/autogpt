@@ -14,6 +14,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_json::Value,
     std::collections::HashMap,
+    std::fmt::{self, Display, Formatter},
 };
 
 /// Live connection state of an MCP server.
@@ -28,8 +29,8 @@ pub enum McpServerStatus {
     Connected,
 }
 
-impl std::fmt::Display for McpServerStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for McpServerStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disconnected => write!(f, "DISCONNECTED"),
             Self::Connecting => write!(f, "CONNECTING"),

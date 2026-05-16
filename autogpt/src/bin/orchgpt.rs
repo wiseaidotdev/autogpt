@@ -19,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
 
         let _args: Cli = Cli::parse();
 
-        setup_logging()?;
+        setup_logging(false)?;
 
         let signer = Signer::new(KeyPair::generate());
         let verifier = Verifier::new(vec![]);

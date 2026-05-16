@@ -17,6 +17,7 @@
 use {
     serde::{Deserialize, Serialize},
     std::collections::HashMap,
+    std::fmt::{self, Display, Formatter},
 };
 
 /// Supported transport mechanisms for MCP.
@@ -32,8 +33,8 @@ pub enum McpTransport {
     Http,
 }
 
-impl std::fmt::Display for McpTransport {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for McpTransport {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Stdio => write!(f, "stdio"),
             Self::Sse => write!(f, "sse"),

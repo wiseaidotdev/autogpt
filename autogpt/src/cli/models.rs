@@ -5,6 +5,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(all(feature = "cli", any(feature = "oai", feature = "co")))]
+use serde_json::to_value;
 #[cfg(feature = "cli")]
 use std::env;
 
@@ -189,7 +191,7 @@ fn openai_models() -> Vec<ProviderModel> {
 
     macro_rules! push_serde {
         ($variant:expr) => {
-            if let Some(id) = serde_json::to_value(&$variant)
+            if let Some(id) = to_value(&$variant)
                 .ok()
                 .and_then(|v| v.as_str().map(String::from))
             {
@@ -262,7 +264,7 @@ fn cohere_models() -> Vec<ProviderModel> {
     variants
         .iter()
         .filter_map(|m| {
-            serde_json::to_value(m)
+            to_value(m)
                 .ok()
                 .and_then(|v| v.as_str().map(String::from))
                 .map(|id| make_model(id, format!("{m:?}")))

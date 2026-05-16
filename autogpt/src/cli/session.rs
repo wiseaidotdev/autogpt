@@ -8,7 +8,11 @@
 #[cfg(feature = "cli")]
 use chrono::{DateTime, Utc};
 #[cfg(feature = "cli")]
+use dirs::home_dir;
+#[cfg(feature = "cli")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "cli")]
+use serde_json::{from_str, to_string_pretty};
 #[cfg(feature = "cli")]
 use std::cmp;
 #[cfg(feature = "cli")]
@@ -290,7 +294,7 @@ impl SessionManager {
     pub fn new(base_dir: Option<&str>) -> Self {
         let base = match base_dir {
             Some(dir) => PathBuf::from(dir),
-            None => dirs::home_dir()
+            None => home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".autogpt"),
         };
@@ -314,7 +318,7 @@ impl SessionManager {
         let dir = self.session_dir(&session.id);
         fs::create_dir_all(&dir)?;
 
-        let json = serde_json::to_string_pretty(session)?;
+        let json = to_string_pretty(session)?;
         fs::write(dir.join("session.json"), json)?;
 
         if let Some(ref plan) = session.plan {
@@ -340,7 +344,7 @@ impl SessionManager {
             fs::write(dir.join("reasoning_log.md"), reasoning_md)?;
         }
 
-        let stats_json = serde_json::to_string_pretty(&session.stats)?;
+        let stats_json = to_string_pretty(&session.stats)?;
         fs::write(dir.join("stats.json"), stats_json)?;
 
         Ok(())
@@ -349,7 +353,7 @@ impl SessionManager {
     pub fn load(&self, session_id: &str) -> anyhow::Result<Session> {
         let path = self.session_dir(session_id).join("session.json");
         let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        Ok(from_str(&content)?)
     }
 
     pub fn list(&self) -> anyhow::Result<Vec<SessionEntry>> {
@@ -369,7 +373,7 @@ impl SessionManager {
                 continue;
             }
             if let Ok(content) = fs::read_to_string(&session_file)
-                && let Ok(session) = serde_json::from_str::<Session>(&content)
+                && let Ok(session) = from_str::<Session>(&content)
             {
                 let completed_count = session
                     .tasks

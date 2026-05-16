@@ -32,7 +32,7 @@
 | [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) | [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#environment-variables-setup) |   [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#-using-docker)   |   [**Set Environment Variables**](https://github.com/wiseaidotdev/autogpt/blob/main/INSTALLATION.md#-using-docker)   |
 |                                                 `autogpt -h` <br> `orchgpt -h`                                                 |                                                        `autogpt.exe -h`                                                        |                                          `docker run kevinrsdev/autogpt -h`                                          |                                          `docker run kevinrsdev/orchgpt -h`                                          |
 
-<video src="https://github.com/user-attachments/assets/55a28c1a-eba2-4c94-aee1-2661cbeaabc6"></video>
+<video src="https://github.com/user-attachments/assets/6aae0f5e-1137-4866-bc86-8a081ce067c4"></video>
 
 </div>
 
@@ -83,13 +83,13 @@ AutoGPT supports 4 modes of operation: interactive, direct prompt, standalone ag
 
 ### 0. 🤖 GenericGPT Interactive Mode (Default)
 
-When you run `autogpt` with **no subcommand or flags**, it launches an interactive AI shell powered by **GenericGPT**, a production-hardened autonomous software engineering agent with session persistence, model switching, and multi-provider support:
+When you run `autogpt` with **no subcommand or flags**, it launches an interactive AI TUI powered by **GenericGPT**, a production-hardened autonomous software engineering agent with session persistence, model switching, and multi-provider support:
 
 ```sh
 autogpt
 ```
 
-<video src="https://github.com/user-attachments/assets/55a28c1a-eba2-4c94-aee1-2661cbeaabc6"></video>
+<video src="https://github.com/user-attachments/assets/6aae0f5e-1137-4866-bc86-8a081ce067c4"></video>
 
 The interactive shell supports the following commands:
 

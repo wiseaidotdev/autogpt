@@ -14,7 +14,9 @@
 
 use {
     anyhow::{Context, Result},
+    dirs::home_dir,
     serde::{Deserialize, Serialize},
+    serde_json::{from_str, to_string_pretty},
     std::fs,
     std::path::PathBuf,
 };
@@ -57,7 +59,7 @@ pub struct GlobalSettings {
     /// Registered MCP servers keyed by their unique name.
     #[cfg(feature = "mcp")]
     #[serde(default)]
-    pub mcp: HashMap<String, crate::mcp::settings::McpServerConfig>,
+    pub mcp: HashMap<String, McpServerConfig>,
 
     /// Global MCP policy: names of servers that are allowed (empty = all allowed).
     #[cfg(feature = "mcp")]
@@ -96,7 +98,7 @@ fn default_provider() -> String {
 
 #[cfg(feature = "cli")]
 fn default_workspace() -> String {
-    dirs::home_dir()
+    home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".autogpt")
         .join("workspace")
@@ -148,7 +150,7 @@ pub struct SettingsManager {
 impl SettingsManager {
     /// Creates a `SettingsManager` targeting the default `~/.autogpt/settings.json` path.
     pub fn new() -> Self {
-        let path = dirs::home_dir()
+        let path = home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".autogpt")
             .join("settings.json");
@@ -169,8 +171,7 @@ impl SettingsManager {
         }
         let raw = fs::read_to_string(&self.path)
             .with_context(|| format!("Reading settings from {}", self.path.display()))?;
-        serde_json::from_str(&raw)
-            .with_context(|| format!("Parsing settings from {}", self.path.display()))
+        from_str(&raw).with_context(|| format!("Parsing settings from {}", self.path.display()))
     }
 
     /// Writes `settings` to disk as pretty-printed JSON.
@@ -179,8 +180,7 @@ impl SettingsManager {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Creating dir {}", parent.display()))?;
         }
-        let json =
-            serde_json::to_string_pretty(settings).context("Serializing settings to JSON")?;
+        let json = to_string_pretty(settings).context("Serializing settings to JSON")?;
         fs::write(&self.path, json)
             .with_context(|| format!("Writing settings to {}", self.path.display()))
     }
@@ -192,10 +192,7 @@ impl SettingsManager {
 
     /// Adds or replaces an MCP server in settings and persists the result.
     #[cfg(feature = "mcp")]
-    pub fn add_mcp_server(
-        &self,
-        config: crate::mcp::settings::McpServerConfig,
-    ) -> Result<GlobalSettings> {
+    pub fn add_mcp_server(&self, config: McpServerConfig) -> Result<GlobalSettings> {
         let mut settings = self.load()?;
         settings.mcp.insert(config.name.clone(), config);
         self.save(&settings)?;
