@@ -670,7 +670,7 @@ where
 }
 
 #[cfg(feature = "cli")]
-pub fn setup_logging() -> anyhow::Result<()> {
+pub fn setup_logging(hide_console: bool) -> anyhow::Result<()> {
     #[cfg(target_os = "windows")]
     {
         console::set_colors_enabled(true);
@@ -678,6 +678,12 @@ pub fn setup_logging() -> anyhow::Result<()> {
     }
     colored::control::set_override(true);
     let file_appender = rolling::daily("logs", "autogpt_log");
+
+    let console_filter = if hide_console {
+        filter::LevelFilter::OFF
+    } else {
+        filter::LevelFilter::INFO
+    };
 
     let console_layer = fmt::Layer::new()
         .compact()
@@ -689,7 +695,7 @@ pub fn setup_logging() -> anyhow::Result<()> {
         .with_writer(std::io::stdout)
         .with_ansi(true)
         .event_format(NoLevelFormatter)
-        .with_filter(filter::LevelFilter::INFO);
+        .with_filter(console_filter);
 
     let file_layer = fmt::Layer::new()
         .compact()

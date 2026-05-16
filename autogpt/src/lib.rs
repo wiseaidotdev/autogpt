@@ -38,6 +38,9 @@ pub mod collaboration;
 #[cfg(feature = "cli")]
 pub mod cli;
 
+#[cfg(feature = "cli")]
+pub mod tui;
+
 #[cfg(feature = "mcp")]
 pub mod mcp;
 

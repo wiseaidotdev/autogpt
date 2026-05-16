@@ -24,6 +24,8 @@ pub mod generic;
 #[cfg(feature = "gpt")]
 #[cfg(feature = "git")]
 pub mod git;
+#[cfg(feature = "cli")]
+pub mod intent;
 #[cfg(feature = "gpt")]
 #[cfg(feature = "mail")]
 pub mod mailer;

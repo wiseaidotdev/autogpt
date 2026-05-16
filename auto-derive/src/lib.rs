@@ -471,45 +471,47 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             while let Ok(Some(chunk)) = resp.chunk().await {
                                 if let Ok(text) = std::str::from_utf8(&chunk) {
                                     buffer.push_str(text);
-                                    let mut parts: Vec<&str> =
-                                        buffer.split("\n\n").collect();
-                                    let new_buffer = if !buffer.ends_with("\n\n") {
-                                        parts.pop().unwrap_or("").to_string()
-                                    } else {
-                                        String::new()
-                                    };
-
-                                    for part in parts {
-                                        for line in part.lines() {
-                                            if let Some(data) =
-                                                line.strip_prefix("data: ")
+                                    while let Some(pos) = buffer.find('\n') {
+                                        let line = buffer[..pos].trim().to_string();
+                                        buffer = buffer[pos + 1..].to_string();
+                                        if line.is_empty() { continue; }
+                                        let data = line.strip_prefix("data: ").unwrap_or(&line).trim();
+                                        if data == "[DONE]" { continue; }
+                                        if let Ok(json) = ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data) {
+                                            if let Some(text) = json
+                                                .get("candidates")
+                                                .and_then(|c| c.get(0))
+                                                .and_then(|c| c.get("content"))
+                                                .and_then(|c| c.get("parts"))
+                                                .and_then(|p| p.get(0))
+                                                .and_then(|p| p.get("text"))
+                                                .and_then(|t| t.as_str())
                                             {
-                                                let data = data.trim();
-                                                if data == "[DONE]" {
-                                                    continue;
-                                                }
-                                                if let Ok(json) =
-                                                    ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data)
-                                                {
-                                                    if let Some(text) = json
-                                                        .get("candidates")
-                                                        .and_then(|c| c.get(0))
-                                                        .and_then(|c| c.get("content"))
-                                                        .and_then(|c| c.get("parts"))
-                                                        .and_then(|p| p.get(0))
-                                                        .and_then(|p| p.get("text"))
-                                                        .and_then(|t| t.as_str())
-                                                    {
-                                                        let _ = tx
-                                                            .send(text.to_string())
-                                                            .await;
-                                                    }
-                                                }
+                                                let _ = tx.send(text.to_string()).await;
+                                            } else if let Some(text) = json.get("text").and_then(|t| t.as_str()) {
+                                                let _ = tx.send(text.to_string()).await;
                                             }
                                         }
                                     }
-
-                                    buffer = new_buffer;
+                                }
+                            }
+                            let data = buffer.trim();
+                            if !data.is_empty() {
+                                let data = data.strip_prefix("data: ").unwrap_or(data).trim();
+                                if data != "[DONE]" {
+                                    if let Ok(json) = ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data) {
+                                        if let Some(text) = json
+                                            .get("candidates")
+                                            .and_then(|c| c.get(0))
+                                            .and_then(|c| c.get("content"))
+                                            .and_then(|c| c.get("parts"))
+                                            .and_then(|p| p.get(0))
+                                            .and_then(|p| p.get("text"))
+                                            .and_then(|t| t.as_str())
+                                        {
+                                            let _ = tx.send(text.to_string()).await;
+                                        }
+                                    }
                                 }
                             }
                         });
@@ -639,43 +641,41 @@ pub fn derive_agent(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             while let Ok(Some(chunk)) = resp.chunk().await {
                                 if let Ok(text) = std::str::from_utf8(&chunk) {
                                     buffer.push_str(text);
-                                    let mut parts: Vec<&str> =
-                                        buffer.split("\n\n").collect();
-                                    let new_buffer = if !buffer.ends_with("\n\n") {
-                                        parts.pop().unwrap_or("").to_string()
-                                    } else {
-                                        String::new()
-                                    };
-
-                                    for part in parts {
-                                        for line in part.lines() {
-                                            if let Some(data) =
-                                                line.strip_prefix("data: ")
+                                    while let Some(pos) = buffer.find('\n') {
+                                        let line = buffer[..pos].trim().to_string();
+                                        buffer = buffer[pos + 1..].to_string();
+                                        if line.is_empty() { continue; }
+                                        let data = line.strip_prefix("data: ").unwrap_or(&line).trim();
+                                        if data == "[DONE]" { continue; }
+                                        if let Ok(json) = ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data) {
+                                            if let Some(content) = json
+                                                .get("choices")
+                                                .and_then(|c| c.get(0))
+                                                .and_then(|c| c.get("delta"))
+                                                .and_then(|d| d.get("content"))
+                                                .and_then(|c| c.as_str())
                                             {
-                                                let data = data.trim();
-                                                if data == "[DONE]" {
-                                                    continue;
-                                                }
-                                                if let Ok(json) =
-                                                    ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data)
-                                                {
-                                                    if let Some(content) = json
-                                                        .get("choices")
-                                                        .and_then(|c| c.get(0))
-                                                        .and_then(|c| c.get("delta"))
-                                                        .and_then(|d| d.get("content"))
-                                                        .and_then(|c| c.as_str())
-                                                    {
-                                                        let _ = tx
-                                                            .send(content.to_string())
-                                                            .await;
-                                                    }
-                                                }
+                                                let _ = tx.send(content.to_string()).await;
                                             }
                                         }
                                     }
-
-                                    buffer = new_buffer;
+                                }
+                            }
+                            let data = buffer.trim();
+                            if !data.is_empty() {
+                                let data = data.strip_prefix("data: ").unwrap_or(data).trim();
+                                if data != "[DONE]" {
+                                    if let Ok(json) = ::autogpt::prelude::serde_json::from_str::<::autogpt::prelude::serde_json::Value>(data) {
+                                        if let Some(content) = json
+                                            .get("choices")
+                                            .and_then(|c| c.get(0))
+                                            .and_then(|c| c.get("delta"))
+                                            .and_then(|d| d.get("content"))
+                                            .and_then(|c| c.as_str())
+                                        {
+                                            let _ = tx.send(content.to_string()).await;
+                                        }
+                                    }
                                 }
                             }
                         });

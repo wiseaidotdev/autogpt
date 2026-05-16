@@ -16,11 +16,13 @@ use {
     crate::mcp::types::{McpServerInfo, McpServerStatus, McpTool, McpToolParam, McpToolResult},
     anyhow::{Context, Result, anyhow},
     serde::{Deserialize, Serialize},
-    serde_json::{Value, json},
+    serde_json::{Value, from_str, json, to_string},
     std::collections::HashMap,
+    std::env::{var, vars},
     std::io::{BufRead, BufReader, Write},
     std::process::{Child, ChildStdin, Command, Stdio},
     std::sync::mpsc::{self, Receiver},
+    std::thread::spawn,
     std::time::Duration,
 };
 
@@ -74,7 +76,7 @@ impl StdioTransport {
             .stderr(Stdio::piped());
 
         builder.env_clear();
-        for (k, v) in std::env::vars() {
+        for (k, v) in vars() {
             if !should_redact(&k) {
                 builder.env(k, v);
             }
@@ -103,7 +105,7 @@ impl StdioTransport {
         let timeout = Duration::from_millis(config.timeout_ms);
         let (tx, rx) = mpsc::channel();
 
-        std::thread::spawn(move || {
+        spawn(move || {
             let mut reader = BufReader::new(stdout);
             loop {
                 let mut line = String::new();
@@ -144,7 +146,7 @@ impl StdioTransport {
             method: method.to_string(),
             params,
         };
-        let mut line = serde_json::to_string(&req).context("Serializing JSON-RPC request")?;
+        let mut line = to_string(&req).context("Serializing JSON-RPC request")?;
         line.push('\n');
         self.stdin
             .write_all(line.as_bytes())
@@ -161,7 +163,7 @@ impl StdioTransport {
                 continue;
             }
 
-            let resp: JsonRpcResponse = match serde_json::from_str(response_line.trim()) {
+            let resp: JsonRpcResponse = match from_str(response_line.trim()) {
                 Ok(r) => r,
                 Err(_) => continue,
             };
@@ -191,8 +193,7 @@ impl StdioTransport {
         )?;
         let notif =
             json!({ "jsonrpc": "2.0", "method": "notifications/initialized", "params": {} });
-        let mut line =
-            serde_json::to_string(&notif).context("Serializing initialized notification")?;
+        let mut line = to_string(&notif).context("Serializing initialized notification")?;
         line.push('\n');
         self.stdin
             .write_all(line.as_bytes())
@@ -243,7 +244,7 @@ fn expand_env_vars(value: &str) -> String {
                     }
                     var_name.push(nc);
                 }
-                result.push_str(&std::env::var(&var_name).unwrap_or_default());
+                result.push_str(&var(&var_name).unwrap_or_default());
             } else {
                 let mut var_name = String::new();
                 while let Some(&nc) = chars.peek() {
@@ -254,7 +255,7 @@ fn expand_env_vars(value: &str) -> String {
                     }
                 }
                 if !var_name.is_empty() {
-                    result.push_str(&std::env::var(&var_name).unwrap_or_default());
+                    result.push_str(&var(&var_name).unwrap_or_default());
                 } else {
                     result.push('$');
                 }
@@ -270,7 +271,7 @@ fn expand_env_vars(value: &str) -> String {
                 var_name.push(nc);
             }
             if closed && !var_name.is_empty() {
-                result.push_str(&std::env::var(&var_name).unwrap_or_default());
+                result.push_str(&var(&var_name).unwrap_or_default());
             } else {
                 result.push('%');
                 result.push_str(&var_name);
@@ -430,8 +431,7 @@ fn http_tool_call(
         return Err(anyhow!("MCP server returned HTTP {status}: {text}"));
     }
 
-    let resp: JsonRpcResponse =
-        serde_json::from_str(&text).context("Parsing MCP HTTP JSON-RPC response")?;
+    let resp: JsonRpcResponse = from_str(&text).context("Parsing MCP HTTP JSON-RPC response")?;
     if let Some(err) = resp.error {
         return Err(anyhow!("MCP error {}: {}", err.code, err.message));
     }
@@ -460,7 +460,7 @@ fn http_list_tools(
         .text()
         .context("Reading tools/list HTTP response body")?;
     let resp: JsonRpcResponse =
-        serde_json::from_str(&text).context("Parsing tools/list HTTP JSON-RPC response")?;
+        from_str(&text).context("Parsing tools/list HTTP JSON-RPC response")?;
     if let Some(err) = resp.error {
         return Err(anyhow!("MCP error {}: {}", err.code, err.message));
     }

@@ -10,9 +10,9 @@
 #[cfg(all(feature = "cli", feature = "mcp"))]
 use {
     crate::cli::settings::SettingsManager,
-    crate::cli::tui::{print_success, print_warning, render_mcp_inspect, render_mcp_list},
     crate::mcp::client::McpClient,
     crate::mcp::settings::{McpServerConfig, McpTransport},
+    crate::tui::utils::{print_success, print_warning, render_mcp_inspect, render_mcp_list},
     anyhow::{Result, anyhow},
     colored::Colorize,
     std::collections::HashMap,

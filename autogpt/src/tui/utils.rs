@@ -6,13 +6,25 @@
 // except according to those terms.
 
 #[cfg(feature = "cli")]
+use crate::cli::session::SessionStats;
+#[cfg(all(feature = "cli", feature = "mcp"))]
+use crate::mcp::settings::McpServerConfig;
+#[cfg(all(feature = "cli", feature = "mcp"))]
+use crate::mcp::types::{McpServerInfo, McpServerStatus};
+#[cfg(feature = "cli")]
+use crate::tui::state::TuiEvent;
+#[cfg(feature = "cli")]
 use colored::Colorize;
+#[cfg(feature = "cli")]
+use dialoguer::{Select, theme::ColorfulTheme};
 #[cfg(feature = "cli")]
 use indicatif::{ProgressBar, ProgressStyle};
 #[cfg(feature = "cli")]
 use std::time::Duration;
 #[cfg(feature = "cli")]
 use termimad::{MadSkin, crossterm::style::Color};
+#[cfg(feature = "cli")]
+use tokio::sync::mpsc::UnboundedSender;
 #[cfg(feature = "cli")]
 use tracing::{error, info, warn};
 
@@ -125,6 +137,54 @@ pub fn render_update_banner(current: &str, latest: &str) {
     render_warning_box(&msg);
 }
 
+/// Renders the help table for all available slash commands to the TUI log.
+#[cfg(feature = "cli")]
+pub fn render_help_table_to_log(tx: &UnboundedSender<TuiEvent>) {
+    let commands: &[(&str, &str)] = &[
+        (
+            "/help",
+            "Display this help table with all available commands",
+        ),
+        (
+            "/sessions",
+            "List and interactively resume a previous session",
+        ),
+        ("/models", "List available models for the current provider"),
+        ("/clear", "Clear the Activity Log"),
+        (
+            "/status",
+            "Show current session info, task progress, and model",
+        ),
+        ("/workspace", "Display the current workspace directory path"),
+        ("/provider", "Show and switch the active LLM provider"),
+        ("/mcp", "List, inspect, and manage MCP servers"),
+        ("exit / quit", "Save the current session and exit AutoGPT"),
+    ];
+
+    let _ = tx.send(TuiEvent::Log("Available Commands:".to_string()));
+    for (cmd, desc) in commands {
+        let _ = tx.send(TuiEvent::Log(format!("  {:14}  {}", cmd, desc)));
+    }
+
+    let _ = tx.send(TuiEvent::Log("".to_string()));
+    let _ = tx.send(TuiEvent::Log("TUI Navigation:".to_string()));
+    let _ = tx.send(TuiEvent::Log(
+        "  Up / Down       Scroll Activity Log".to_string(),
+    ));
+    let _ = tx.send(TuiEvent::Log(
+        "  PgUp / PgDn     Scroll Activity Log (fast)".to_string(),
+    ));
+    let _ = tx.send(TuiEvent::Log(
+        "  Ctrl+Up/Down    Scroll Task List (right panel)".to_string(),
+    ));
+    let _ = tx.send(TuiEvent::Log("  Tab / S-Tab     Switch Tabs".to_string()));
+    let _ = tx.send(TuiEvent::Log(
+        "  Esc             Interrupt / Abort".to_string(),
+    ));
+
+    render_mcp_help_entries_to_log(tx);
+}
+
 /// Renders the help table for all available slash commands.
 #[cfg(feature = "cli")]
 pub fn render_help_table() {
@@ -165,13 +225,9 @@ pub fn render_help_table() {
     info!("");
 }
 
-/// Renders an interactive model selector and returns the zero-based index of the chosen model.
-///
-/// Uses `dialoguer::Select` for a terminal-native selection UI with keyboard navigation.
+/// Renders an interactive model selector using `dialoguer`.
 #[cfg(feature = "cli")]
 pub fn render_model_selector(models: &[ProviderModel], current_idx: usize) -> usize {
-    use dialoguer::{Select, theme::ColorfulTheme};
-
     info!("");
     info!("{}", "Select Model".bright_cyan().bold());
     info!("{}", "─".repeat(BOX_WIDTH).bright_black());
@@ -214,8 +270,11 @@ pub fn render_markdown(content: &str) {
 
 /// Creates and starts a themed spinner with autogpt-inspired tick animation.
 #[cfg(feature = "cli")]
-pub fn create_spinner(message: &str) -> ProgressBar {
+pub fn create_spinner(message: &str, hidden: bool) -> ProgressBar {
     let spinner = ProgressBar::new_spinner();
+    if hidden {
+        spinner.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+    }
     spinner.set_style(
         ProgressStyle::with_template("{spinner:.magenta} {msg:.cyan}")
             .unwrap()
@@ -299,7 +358,7 @@ pub fn print_success(message: &str) {
     info!("{}  {}", "✓".bright_green(), message.bright_green().bold());
 }
 
-/// Renders a single labelled status bar line showing working context and live token stats.
+/// Log a status bar line to the terminal.
 #[cfg(feature = "cli")]
 pub fn print_status_bar(cwd: &str, model: &str, provider: &str) {
     info!(
@@ -315,10 +374,7 @@ pub fn print_status_bar(cwd: &str, model: &str, provider: &str) {
 /// Format: `↑{req}req ↓{resp}res ~{tokens_sent}tk↑ ~{tokens_recv}tk↓  🌐`
 /// The web-search badge is only appended when `internet_access` is true.
 #[cfg(feature = "cli")]
-pub fn build_stats_status_segment(
-    stats: &crate::cli::session::SessionStats,
-    internet_access: bool,
-) -> String {
+pub fn build_stats_status_segment(stats: &SessionStats, internet_access: bool) -> String {
     let search_badge = if internet_access {
         "  \x1b[94m🌐 live-search\x1b[0m".to_string()
     } else {
@@ -332,8 +388,7 @@ pub fn build_stats_status_segment(
 
 /// Renders a summary table of all registered MCP servers.
 #[cfg(all(feature = "cli", feature = "mcp"))]
-pub fn render_mcp_list(infos: &[crate::mcp::types::McpServerInfo]) {
-    use crate::mcp::types::McpServerStatus;
+pub fn render_mcp_list(infos: &[McpServerInfo]) {
     print_section("MCP Servers");
     if infos.is_empty() {
         print_warning("No MCP servers configured. Use `autogpt mcp add` or `/mcp add`.");
@@ -377,10 +432,7 @@ pub fn render_mcp_list(infos: &[crate::mcp::types::McpServerInfo]) {
 
 /// Renders detailed information about a single MCP server, including its tools.
 #[cfg(all(feature = "cli", feature = "mcp"))]
-pub fn render_mcp_inspect(
-    info: &crate::mcp::types::McpServerInfo,
-    config: &crate::mcp::settings::McpServerConfig,
-) {
+pub fn render_mcp_inspect(info: &McpServerInfo, config: &McpServerConfig) {
     print_section(&format!("MCP Server: {}", info.name));
     info!(
         "  {}  {}",
@@ -451,6 +503,72 @@ pub fn render_mcp_inspect(
         }
     }
     info!("");
+}
+
+/// Append MCP server list to the TUI log.
+#[cfg(all(feature = "cli", feature = "mcp"))]
+pub fn render_mcp_list_to_log(tx: &UnboundedSender<TuiEvent>, infos: &[McpServerInfo]) {
+    use crate::mcp::types::McpServerStatus;
+    let _ = tx.send(TuiEvent::Log("=== MCP Servers ===".to_string()));
+    if infos.is_empty() {
+        let _ = tx.send(TuiEvent::Log("No MCP servers configured.".to_string()));
+        return;
+    }
+    for info in infos {
+        let status = match info.status {
+            McpServerStatus::Connected => "connected",
+            McpServerStatus::Connecting => "connecting",
+            McpServerStatus::Disconnected => "offline",
+        };
+        let _ = tx.send(TuiEvent::Log(format!(
+            "  {} [{}] - {} tools",
+            info.name,
+            status,
+            info.tools.len()
+        )));
+    }
+}
+
+/// Append MCP server inspect info to the TUI log.
+#[cfg(all(feature = "cli", feature = "mcp"))]
+pub fn render_mcp_inspect_to_log(
+    tx: &UnboundedSender<TuiEvent>,
+    info: &McpServerInfo,
+    config: &McpServerConfig,
+) {
+    let _ = tx.send(TuiEvent::Log(format!("=== MCP Inspect: {} ===", info.name)));
+    let _ = tx.send(TuiEvent::Log(format!("  Transport:  {}", config.transport)));
+    let _ = tx.send(TuiEvent::Log(format!(
+        "  Connection: {}",
+        config.connection_display()
+    )));
+    let _ = tx.send(TuiEvent::Log(format!("  Status:     {}", info.status)));
+    if let Some(ref desc) = config.description {
+        let _ = tx.send(TuiEvent::Log(format!("  Description:{}", desc)));
+    }
+    let _ = tx.send(TuiEvent::Log(format!("  Tools ({}):", info.tools.len())));
+    for tool in &info.tools {
+        let _ = tx.send(TuiEvent::Log(format!(
+            "    - {}: {}",
+            tool.name, tool.description
+        )));
+    }
+}
+
+/// Appends MCP entries to the help table for the TUI log.
+#[cfg(feature = "cli")]
+pub fn render_mcp_help_entries_to_log(tx: &UnboundedSender<TuiEvent>) {
+    let _ = tx.send(TuiEvent::Log("MCP Commands:".to_string()));
+    let _ = tx.send(TuiEvent::Log(
+        "  /mcp list           List servers".to_string(),
+    ));
+    let _ = tx.send(TuiEvent::Log(
+        "  /mcp inspect <name> Show tools".to_string(),
+    ));
+    let _ = tx.send(TuiEvent::Log(
+        "  /mcp remove <name>  Remove server".to_string(),
+    ));
+    let _ = tx.send(TuiEvent::Log("  /mcp call <srv> <tool> [args]".to_string()));
 }
 
 /// Appends MCP entries to the help table rendered by `/help`.

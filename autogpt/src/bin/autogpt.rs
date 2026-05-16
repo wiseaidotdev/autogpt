@@ -6,6 +6,37 @@
 // except according to those terms.
 
 use anyhow::Result;
+use std::env::{current_dir, set_var, var};
+use std::fs::read_to_string;
+#[cfg(all(
+    feature = "cli",
+    any(
+        feature = "gem",
+        feature = "oai",
+        feature = "cld",
+        feature = "xai",
+        feature = "co",
+        feature = "hf",
+        feature = "net"
+    )
+))]
+use std::io;
+
+#[cfg(feature = "mcp")]
+use dirs::home_dir;
+#[cfg(all(
+    feature = "cli",
+    any(
+        feature = "gem",
+        feature = "oai",
+        feature = "cld",
+        feature = "xai",
+        feature = "co",
+        feature = "hf",
+        feature = "net"
+    )
+))]
+use std::io::Write;
 
 /// The main entry point of `autogpt`.
 ///
@@ -32,12 +63,12 @@ use anyhow::Result;
 /// or as a single self-contained agent.
 fn load_dotenv() {
     let mut paths = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
+    if let Ok(cwd) = current_dir() {
         paths.push(cwd.join(".env"));
     }
     #[cfg(feature = "mcp")]
     {
-        if let Some(home) = dirs::home_dir() {
+        if let Some(home) = home_dir() {
             paths.push(home.join(".env"));
             paths.push(home.join(".autogpt").join(".env"));
         }
@@ -45,7 +76,7 @@ fn load_dotenv() {
 
     for path in paths {
         if path.exists()
-            && let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(content) = read_to_string(&path)
         {
             for line in content.lines() {
                 let line = line.trim();
@@ -55,9 +86,9 @@ fn load_dotenv() {
                 if let Some((k, v)) = line.split_once('=') {
                     let k = k.trim();
                     let v = v.trim().trim_matches('"').trim_matches('\'');
-                    if !k.is_empty() && std::env::var(k).is_err() {
+                    if !k.is_empty() && var(k).is_err() {
                         unsafe {
-                            std::env::set_var(k, v);
+                            set_var(k, v);
                         }
                     }
                 }
@@ -82,12 +113,15 @@ async fn main() -> Result<()> {
         };
 
         use autogpt::{
+            agents::generic::{GenericAgentLoopConfig, run_generic_agent_loop},
             cli::autogpt::{
                 Cli, Commands,
                 commands::{build, new, run, test},
             },
-            common::utils::{fetch_latest_version, is_outdated, setup_logging},
+            cli::settings::SettingsManager,
+            common::utils::{fetch_latest_version, is_outdated, prompt_for_update, setup_logging},
             prelude::ClientType,
+            tui::{app::TuiApp, state::TuiEvent, utils::render_update_banner},
         };
 
         #[cfg(feature = "gpt")]
@@ -145,22 +179,24 @@ async fn main() -> Result<()> {
             feature = "hf",
             feature = "net"
         ))]
-        use {std::io::Write, std::thread, tokio::time::Duration};
-        setup_logging()?;
+        use {std::thread, tokio::time::Duration};
 
+        #[cfg(all(feature = "cli", feature = "mcp"))]
+        use {
+            autogpt::cli::autogpt::McpSubcommand, autogpt::cli::autogpt::commands::mcp as mcp_cmd,
+        };
         let args: Cli = Cli::parse();
 
         let current_version = env!("CARGO_PKG_VERSION");
 
         let tui_mode = args.prompt.is_none() && args.command.is_none() && !args.net;
+        setup_logging(tui_mode)?;
         if let Some(latest_version) = fetch_latest_version().await
             && is_outdated(current_version, &latest_version)
         {
             if tui_mode {
-                use autogpt::cli::tui::render_update_banner;
                 render_update_banner(current_version, &latest_version);
             } else {
-                use autogpt::common::utils::prompt_for_update;
                 prompt_for_update();
             }
         }
@@ -177,7 +213,7 @@ async fn main() -> Result<()> {
         ))]
         pub fn type_with_cursor_effect(text: &str, delay: u64, skin: &MadSkin) {
             skin.print_inline(text);
-            let _ = std::io::stdout().flush();
+            let _ = io::stdout().flush();
             thread::sleep(Duration::from_millis(delay));
         }
 
@@ -204,7 +240,7 @@ async fn main() -> Result<()> {
             tokio::pin!(shutdown_signal);
             loop {
                 print!("> ");
-                std::io::stdout().flush()?;
+                io::stdout().flush()?;
                 input_line.clear();
                 tokio::select! {
                     read = stdin.read_line(&mut input_line) => {
@@ -576,7 +612,6 @@ async fn main() -> Result<()> {
                 );
             }
         } else if args.command.is_none() {
-            use autogpt::agents::generic::run_generic_agent_loop;
             let mixture = {
                 #[cfg(feature = "mop")]
                 {
@@ -587,14 +622,65 @@ async fn main() -> Result<()> {
                     false
                 }
             };
-            run_generic_agent_loop(
-                args.yolo,
-                !args.no_internet,
-                args.session.as_deref(),
-                mixture,
-                args.workspace,
-            )
-            .await?;
+
+            let settings_mgr = SettingsManager::new();
+            let mut settings = settings_mgr.load().unwrap_or_default();
+            if args.yolo {
+                settings.yolo = true;
+            }
+            if args.no_internet {
+                settings.internet_access = false;
+            }
+
+            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<TuiEvent>();
+            let (input_tx, input_rx) = tokio::sync::mpsc::channel::<String>(32);
+            let abort_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+            let yolo = settings.yolo;
+            let internet_access = settings.internet_access;
+            let session_id = args.session.clone();
+            let workspace = args.workspace.clone();
+            let tx_clone = event_tx.clone();
+            let abort_clone = abort_token.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) = run_generic_agent_loop(GenericAgentLoopConfig {
+                    yolo,
+                    internet_access,
+                    session_id,
+                    mixture,
+                    custom_workspace: workspace,
+                    event_tx: Some(tx_clone),
+                    input_rx: Some(input_rx),
+                    abort_token: Some(abort_clone),
+                })
+                .await
+                {
+                    eprintln!("Agent error: {e}");
+                }
+            });
+
+            match TuiApp::new(event_rx, &settings, abort_token) {
+                Ok(app) => {
+                    if let Err(e) = app.run(input_tx) {
+                        eprintln!("TUI error: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to start TUI: {e}. Falling back to text mode.");
+                    run_generic_agent_loop(GenericAgentLoopConfig {
+                        yolo: args.yolo,
+                        internet_access: !args.no_internet,
+                        session_id: args.session,
+                        mixture,
+                        custom_workspace: args.workspace,
+                        event_tx: None,
+                        input_rx: None,
+                        abort_token: None,
+                    })
+                    .await?;
+                }
+            }
         } else if let Some(command) = args.command {
             #[cfg(feature = "gpt")]
             let workspace = var("AUTOGPT_WORKSPACE").unwrap_or_else(|_| "workspace/".to_string());
@@ -1296,47 +1382,43 @@ async fn main() -> Result<()> {
                 Commands::Run { feature } => run::handle_run(feature.unwrap_or_default())?,
                 Commands::Test => test::handle_test()?,
                 #[cfg(all(feature = "cli", feature = "mcp"))]
-                Commands::Mcp { subcommand } => {
-                    use autogpt::cli::autogpt::McpSubcommand;
-                    use autogpt::cli::autogpt::commands::mcp as mcp_cmd;
-                    match subcommand {
-                        McpSubcommand::Add(args) => {
-                            tokio::task::spawn_blocking(move || {
-                                mcp_cmd::cmd_mcp_add(
-                                    &args.name,
-                                    &args.command_or_url,
-                                    args.args,
-                                    &args.transport,
-                                    args.env_pairs,
-                                    args.headers,
-                                    args.timeout,
-                                    args.trust,
-                                    args.description,
-                                    args.include_tools,
-                                    args.exclude_tools,
-                                )
-                            })
-                            .await??;
-                        }
-                        McpSubcommand::List => {
-                            tokio::task::spawn_blocking(mcp_cmd::cmd_mcp_list).await??;
-                        }
-                        McpSubcommand::Remove { name } => {
-                            tokio::task::spawn_blocking(move || mcp_cmd::cmd_mcp_remove(&name))
-                                .await??;
-                        }
-                        McpSubcommand::Inspect { name } => {
-                            tokio::task::spawn_blocking(move || mcp_cmd::cmd_mcp_inspect(&name))
-                                .await??;
-                        }
-                        McpSubcommand::Call { server, tool, args } => {
-                            tokio::task::spawn_blocking(move || {
-                                mcp_cmd::cmd_mcp_call(&server, &tool, args)
-                            })
-                            .await??;
-                        }
+                Commands::Mcp { subcommand } => match subcommand {
+                    McpSubcommand::Add(args) => {
+                        tokio::task::spawn_blocking(move || {
+                            mcp_cmd::cmd_mcp_add(
+                                &args.name,
+                                &args.command_or_url,
+                                args.args,
+                                &args.transport,
+                                args.env_pairs,
+                                args.headers,
+                                args.timeout,
+                                args.trust,
+                                args.description,
+                                args.include_tools,
+                                args.exclude_tools,
+                            )
+                        })
+                        .await??;
                     }
-                }
+                    McpSubcommand::List => {
+                        tokio::task::spawn_blocking(mcp_cmd::cmd_mcp_list).await??;
+                    }
+                    McpSubcommand::Remove { name } => {
+                        tokio::task::spawn_blocking(move || mcp_cmd::cmd_mcp_remove(&name))
+                            .await??;
+                    }
+                    McpSubcommand::Inspect { name } => {
+                        tokio::task::spawn_blocking(move || mcp_cmd::cmd_mcp_inspect(&name))
+                            .await??;
+                    }
+                    McpSubcommand::Call { server, tool, args } => {
+                        tokio::task::spawn_blocking(move || {
+                            mcp_cmd::cmd_mcp_call(&server, &tool, args)
+                        })
+                        .await??;
+                    }
+                },
             };
         }
     }
